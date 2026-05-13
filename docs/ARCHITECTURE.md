@@ -8,18 +8,23 @@ KAYA is a modular Rust workspace designed around strict separation of responsibi
 2. The user chooses a callsign.
 3. `shared` generates a temporary `KY-XXXXXX` node id.
 4. `transport` binds an IPv4 multicast UDP socket.
-5. `app` broadcasts `HELLO` and `JOIN_ROOM`.
+5. The network reader task emits `PacketReceived` events.
 6. Incoming datagrams are decoded by `protocol`.
-7. `peer` updates presence and timeout state.
-8. `rooms` routes room messages and DMs.
-9. `ui` renders traffic, peers, logs, and input.
-10. `persistence` records config, known peers, and basic history.
+7. The runtime deduplicates packet ids.
+8. `peer` updates presence and timeout state.
+9. `rooms` routes room messages and DMs.
+10. Domain events update the UI projection.
+11. `persistence` records config, known peers, and basic history.
 
 ## Crates
 
 ### app
 
-Application bootstrap and orchestration. Owns the Tokio runtime loop, heartbeat, pruning, command handling, and integration between crates.
+Application bootstrap and orchestration. Owns the Tokio runtime loop, heartbeat, pruning, command handling, event consumption, and integration between crates.
+
+### events
+
+Internal event bus built on Tokio broadcast channels. It carries packet, peer, room, error, network, and shutdown events.
 
 ### protocol
 
@@ -43,7 +48,7 @@ Parses terminal input into typed commands or room messages.
 
 ### persistence
 
-Stores local config, known peers, and basic history in sled.
+Stores `~/.kaya/config.toml`, known peers, and basic history. Config is TOML; history/cache use sled.
 
 ### ui
 
@@ -55,7 +60,11 @@ Common constants, node id generation, errors, timestamps, and normalization help
 
 ## Event Model
 
-KAYA currently uses simple packet-driven state:
+KAYA uses packet-driven state behind an internal event bus:
+
+```text
+transport -> PacketReceived -> runtime -> peer/rooms -> domain events -> UI projection
+```
 
 - `HELLO`: announces a node.
 - `HEARTBEAT`: refreshes peer presence.

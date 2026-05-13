@@ -1,9 +1,47 @@
 use kaya_shared::{
-    is_valid_node_id, normalize_room, now_millis, KayaError, Result, PROTOCOL_VERSION,
+    is_valid_node_id, normalize_room, now_millis, MAX_PACKET_BYTES, PROTOCOL_VERSION,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use thiserror::Error;
 use uuid::Uuid;
+
+const MAX_FUTURE_SKEW_MS: u64 = 5 * 60 * 1000;
+
+pub type ProtocolResult<T> = std::result::Result<T, ProtocolError>;
+
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum ProtocolError {
+    #[error("unsupported protocol version {actual}; expected {expected}")]
+    UnsupportedVersion { actual: u16, expected: u16 },
+    #[error("packet_id cannot be nil")]
+    NilPacketId,
+    #[error("invalid node_id {0}")]
+    InvalidNodeId(String),
+    #[error("callsign cannot be empty")]
+    EmptyCallsign,
+    #[error("timestamp must be a non-zero unix millisecond value")]
+    InvalidTimestamp,
+    #[error("timestamp is too far in the future")]
+    FutureTimestamp,
+    #[error("{packet_type:?} requires {field}")]
+    MissingField {
+        packet_type: PacketType,
+        field: &'static str,
+    },
+    #[error("payload must be a JSON object")]
+    InvalidPayload,
+    #[error("message body cannot be empty")]
+    EmptyMessageBody,
+    #[error("packet exceeds {max} bytes: {actual}")]
+    PacketTooLarge { max: usize, actual: usize },
+    #[error("packet is too small to be valid JSON")]
+    PacketTooSmall,
+    #[error("packet decode failed: {0}")]
+    Decode(String),
+    #[error("packet encode failed: {0}")]
+    Encode(String),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -218,33 +256,40 @@ impl Packet {
         self.payload.get("message").and_then(Value::as_str)
     }
 
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> ProtocolResult<()> {
         if self.protocol_version != PROTOCOL_VERSION {
-            return Err(KayaError::InvalidPacket(format!(
-                "unsupported protocol version {}",
-                self.protocol_version
-            )));
+            return Err(ProtocolError::UnsupportedVersion {
+                actual: self.protocol_version,
+                expected: PROTOCOL_VERSION,
+            });
         }
 
         if self.packet_id.is_nil() {
-            return Err(KayaError::InvalidPacket("packet_id cannot be nil".into()));
+            return Err(ProtocolError::NilPacketId);
         }
 
         if !is_valid_node_id(&self.node_id) {
-            return Err(KayaError::InvalidPacket(format!(
-                "invalid node_id {}",
-                self.node_id
-            )));
+            return Err(ProtocolError::InvalidNodeId(self.node_id.clone()));
         }
 
         if self.callsign.trim().is_empty() {
-            return Err(KayaError::InvalidPacket("callsign cannot be empty".into()));
+            return Err(ProtocolError::EmptyCallsign);
         }
 
-        if self.timestamp.trim().is_empty() || self.timestamp.parse::<u64>().is_err() {
-            return Err(KayaError::InvalidPacket(
-                "timestamp must be unix milliseconds".into(),
-            ));
+        let timestamp = self
+            .timestamp
+            .trim()
+            .parse::<u64>()
+            .map_err(|_| ProtocolError::InvalidTimestamp)?;
+        if timestamp == 0 {
+            return Err(ProtocolError::InvalidTimestamp);
+        }
+        if timestamp > now_millis().saturating_add(MAX_FUTURE_SKEW_MS) {
+            return Err(ProtocolError::FutureTimestamp);
+        }
+
+        if !self.payload.is_object() {
+            return Err(ProtocolError::InvalidPayload);
         }
 
         match self.packet_type {
@@ -254,10 +299,10 @@ impl Packet {
             | PacketType::JoinRoom
             | PacketType::RoomMessage => {
                 if self.room.as_deref().unwrap_or_default().trim().is_empty() {
-                    return Err(KayaError::InvalidPacket(format!(
-                        "{:?} requires room",
-                        self.packet_type
-                    )));
+                    return Err(ProtocolError::MissingField {
+                        packet_type: self.packet_type,
+                        field: "room",
+                    });
                 }
             }
             PacketType::DirectMessage | PacketType::Ping | PacketType::Pong => {
@@ -268,10 +313,10 @@ impl Packet {
                     .trim()
                     .is_empty()
                 {
-                    return Err(KayaError::InvalidPacket(format!(
-                        "{:?} requires target_node",
-                        self.packet_type
-                    )));
+                    return Err(ProtocolError::MissingField {
+                        packet_type: self.packet_type,
+                        field: "target_node",
+                    });
                 }
             }
             PacketType::System | PacketType::Error => {}
@@ -282,22 +327,35 @@ impl Packet {
             PacketType::RoomMessage | PacketType::DirectMessage
         ) && self.body().unwrap_or_default().trim().is_empty()
         {
-            return Err(KayaError::InvalidPacket(
-                "message body cannot be empty".into(),
-            ));
+            return Err(ProtocolError::EmptyMessageBody);
         }
 
         Ok(())
     }
 }
 
-pub fn encode(packet: &Packet) -> Result<Vec<u8>> {
+pub fn encode(packet: &Packet) -> ProtocolResult<Vec<u8>> {
     packet.validate()?;
-    serde_json::to_vec(packet).map_err(Into::into)
+    serde_json::to_vec(packet).map_err(|err| ProtocolError::Encode(err.to_string()))
 }
 
-pub fn decode(bytes: &[u8]) -> Result<Packet> {
-    let packet: Packet = serde_json::from_slice(bytes)?;
+pub fn decode(bytes: &[u8]) -> ProtocolResult<Packet> {
+    decode_with_limit(bytes, MAX_PACKET_BYTES)
+}
+
+pub fn decode_with_limit(bytes: &[u8], max_bytes: usize) -> ProtocolResult<Packet> {
+    if bytes.len() < kaya_shared::MIN_PACKET_BYTES {
+        return Err(ProtocolError::PacketTooSmall);
+    }
+    if bytes.len() > max_bytes {
+        return Err(ProtocolError::PacketTooLarge {
+            max: max_bytes,
+            actual: bytes.len(),
+        });
+    }
+
+    let packet: Packet =
+        serde_json::from_slice(bytes).map_err(|err| ProtocolError::Decode(err.to_string()))?;
     packet.validate()?;
     Ok(packet)
 }
@@ -331,7 +389,11 @@ mod tests {
     fn rejects_wrong_protocol_version() {
         let mut packet = Packet::hello("KY-71AF92", "Helio", "geral");
         packet.protocol_version = 99;
-        assert!(decode(&serde_json::to_vec(&packet).unwrap()).is_err());
+        let bytes = serde_json::to_vec(&packet).expect("packet json");
+        assert!(matches!(
+            decode(&bytes),
+            Err(ProtocolError::UnsupportedVersion { actual: 99, .. })
+        ));
     }
 
     #[test]
@@ -339,5 +401,34 @@ mod tests {
         let packet = Packet::join_room("KY-71AF92", "Helio", "semana-info");
         let value: Value = serde_json::from_slice(&encode(&packet).unwrap()).unwrap();
         assert_eq!(value["type"], "JOIN_ROOM");
+    }
+
+    #[test]
+    fn rejects_unknown_packet_types() {
+        let mut value = serde_json::to_value(Packet::hello("KY-71AF92", "Helio", "geral")).unwrap();
+        value["type"] = Value::String("UNKNOWN".into());
+        let bytes = serde_json::to_vec(&value).unwrap();
+
+        assert!(matches!(decode(&bytes), Err(ProtocolError::Decode(_))));
+    }
+
+    #[test]
+    fn rejects_non_object_payloads() {
+        let mut packet = Packet::hello("KY-71AF92", "Helio", "geral");
+        packet.payload = Value::String("bad".into());
+
+        assert!(matches!(
+            packet.validate(),
+            Err(ProtocolError::InvalidPayload)
+        ));
+    }
+
+    #[test]
+    fn rejects_oversized_packets_before_json_decode() {
+        let bytes = vec![b' '; 32];
+        assert!(matches!(
+            decode_with_limit(&bytes, 8),
+            Err(ProtocolError::PacketTooLarge { max: 8, actual: 32 })
+        ));
     }
 }

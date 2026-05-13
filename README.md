@@ -37,6 +37,7 @@ kaya-cli/
 ├── crates/
 │   ├── app/          # runtime, bootstrap, coordination
 │   ├── commands/     # slash-command parser
+│   ├── events/       # internal event bus and counters
 │   ├── peer/         # presence, peer cache, timeouts
 │   ├── persistence/  # sled-backed local config/history/cache
 │   ├── protocol/     # packet schema, validation, JSON encode/decode
@@ -73,6 +74,21 @@ KAYA stores local config, peer cache, and basic history in `~/.kaya` by default.
 
 ```bash
 KAYA_HOME=/tmp/kaya-helio cargo run -p kaya-app --bin kaya
+```
+
+Configuration is stored as TOML:
+
+```toml
+nickname = "Helio"
+multicast_address = "239.71.0.1"
+multicast_port = 42424
+heartbeat_interval_secs = 3
+peer_timeout_secs = 12
+theme = "kaya-dark"
+packet_max_bytes = 65536
+default_room = "geral"
+last_room = "semana-info"
+log_level = "kaya=info"
 ```
 
 ## Phase 1 Usage
@@ -126,8 +142,13 @@ cargo test
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Event System](docs/EVENT_SYSTEM.md)
+- [Transport](docs/TRANSPORT.md)
+- [State Management](docs/STATE_MANAGEMENT.md)
+- [UI System](docs/UI_SYSTEM.md)
 - [Protocol](docs/PROTOCOL.md)
 - [Commands](docs/COMMANDS.md)
+- [Testing](docs/TESTING.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Security](docs/SECURITY.md)
 
@@ -137,3 +158,8 @@ cargo test
 - [LAB-02 room sync](labs/LAB-02-room-sync.md)
 - [LAB-03 private messaging](labs/LAB-03-private-messaging.md)
 - [LAB-04 node failure](labs/LAB-04-node-failure.md)
+- [Packet loss](labs/packet-loss.md)
+- [Peer timeout](labs/peer-timeout.md)
+- [Malformed packets](labs/malformed-packets.md)
+- [Simultaneous joins](labs/simultaneous-joins.md)
+- [Multi-room sync](labs/multi-room-sync.md)

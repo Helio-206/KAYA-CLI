@@ -18,7 +18,7 @@ All packets are JSON over UDP multicast. Anyone on the local network segment can
 
 ### Replay
 
-Phase 1 includes packet ids and timestamps, but does not yet enforce replay windows or duplicate suppression.
+Phase 1 includes packet ids, timestamps, and runtime duplicate suppression for recently seen packet ids. It does not yet provide cryptographic replay protection.
 
 ### Relay Attacks
 

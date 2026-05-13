@@ -22,8 +22,15 @@ pub struct Room {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RouteOutcome {
-    Joined { node_id: String, room: String },
-    Left { node_id: String },
+    Joined {
+        node_id: String,
+        callsign: String,
+        room: String,
+    },
+    Left {
+        node_id: String,
+        room: Option<String>,
+    },
     RoomMessage(ChatMessage),
     DirectMessage(ChatMessage),
     Ignored,
@@ -112,6 +119,7 @@ impl RoomStore {
                 self.room_mut(&room).members.insert(packet.node_id.clone());
                 RouteOutcome::Joined {
                     node_id: packet.node_id.clone(),
+                    callsign: packet.callsign.clone(),
                     room,
                 }
             }
@@ -121,6 +129,7 @@ impl RoomStore {
                 }
                 RouteOutcome::Left {
                     node_id: packet.node_id.clone(),
+                    room: packet.room.clone(),
                 }
             }
             PacketType::RoomMessage => {

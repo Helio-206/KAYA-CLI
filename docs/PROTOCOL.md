@@ -65,7 +65,11 @@ The protocol crate rejects:
 - nil packet ids;
 - malformed node ids;
 - empty callsigns;
-- missing timestamps;
+- missing, zero, or far-future timestamps;
+- non-object payloads;
+- packets above the configured byte limit;
+- malformed JSON;
+- unknown packet types;
 - room packets without `room`;
 - direct packets without `target_node`;
 - message packets without `payload.body`.

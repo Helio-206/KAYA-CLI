@@ -7,6 +7,10 @@
 - UDP multicast discovery.
 - HELLO, HEARTBEAT, JOIN_ROOM, ROOM_MESSAGE, DIRECT_MESSAGE, LEAVE.
 - Peer timeout.
+- Internal event bus.
+- Packet deduplication.
+- Config TOML.
+- Runtime diagnostics panel.
 - Default room and room switching.
 - Basic DMs by callsign or node id.
 - ratatui/crossterm TUI.
@@ -16,7 +20,7 @@
 ## Phase 2: Operational Hardening
 
 - Latency measurement with PING/PONG.
-- Message ids and duplicate suppression.
+- Message id retention tuning.
 - Better reconnect behavior.
 - Scrollback navigation.
 - Command autocomplete.

@@ -2,6 +2,8 @@
 
 Commands are typed in the input panel. Text without `/` is sent as a public message to the current room.
 
+The parser is registry-based: command metadata defines aliases, validation, usage strings, and generated help text. This keeps the command engine ready for autocomplete and future plugin hooks.
+
 ## Reference
 
 | Command | Example | Description |

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
+use thiserror::Error;
 use uuid::Uuid;
 
 pub const PROTOCOL_VERSION: u16 = 1;
@@ -8,8 +9,10 @@ pub const DEFAULT_ROOM: &str = "geral";
 pub const MULTICAST_IPV4: &str = "239.71.0.1";
 pub const MULTICAST_PORT: u16 = 42424;
 pub const MAX_PACKET_BYTES: usize = 64 * 1024;
+pub const MIN_PACKET_BYTES: usize = 2;
 pub const PEER_TIMEOUT_SECS: u64 = 12;
 pub const HEARTBEAT_INTERVAL_SECS: u64 = 3;
+pub const EVENT_CHANNEL_CAPACITY: usize = 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NodeId(String);
@@ -62,6 +65,13 @@ pub fn now_millis() -> u64 {
         .as_millis() as u64
 }
 
+pub fn monotonic_uptime_secs(started_at: SystemTime) -> u64 {
+    SystemTime::now()
+        .duration_since(started_at)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 pub fn normalize_room(room: &str) -> String {
     room.trim().trim_start_matches('#').to_ascii_lowercase()
 }
@@ -70,49 +80,28 @@ pub fn normalize_callsign(callsign: &str) -> String {
     callsign.trim().to_string()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum KayaError {
+    #[error("invalid KAYA node id: {0}")]
     InvalidNodeId(String),
+    #[error("invalid KAYA packet: {0}")]
     InvalidPacket(String),
+    #[error("protocol error: {0}")]
+    Protocol(String),
+    #[error("transport error: {0}")]
+    Transport(String),
+    #[error("config error: {0}")]
+    Config(String),
+    #[error("event channel closed: {0}")]
+    ChannelClosed(String),
+    #[error("invalid KAYA command: {0}")]
     InvalidCommand(String),
-    Io(std::io::Error),
-    Json(serde_json::Error),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("json error: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("storage error: {0}")]
     Storage(String),
-}
-
-impl fmt::Display for KayaError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            KayaError::InvalidNodeId(value) => write!(f, "invalid KAYA node id: {value}"),
-            KayaError::InvalidPacket(value) => write!(f, "invalid KAYA packet: {value}"),
-            KayaError::InvalidCommand(value) => write!(f, "invalid KAYA command: {value}"),
-            KayaError::Io(err) => write!(f, "io error: {err}"),
-            KayaError::Json(err) => write!(f, "json error: {err}"),
-            KayaError::Storage(err) => write!(f, "storage error: {err}"),
-        }
-    }
-}
-
-impl std::error::Error for KayaError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            KayaError::Io(err) => Some(err),
-            KayaError::Json(err) => Some(err),
-            _ => None,
-        }
-    }
-}
-
-impl From<std::io::Error> for KayaError {
-    fn from(value: std::io::Error) -> Self {
-        KayaError::Io(value)
-    }
-}
-
-impl From<serde_json::Error> for KayaError {
-    fn from(value: serde_json::Error) -> Self {
-        KayaError::Json(value)
-    }
 }
 
 pub type Result<T> = std::result::Result<T, KayaError>;

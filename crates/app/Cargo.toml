@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 kaya-commands = { path = "../commands" }
+kaya-events = { path = "../events" }
 kaya-peer = { path = "../peer" }
 kaya-persistence = { path = "../persistence" }
 kaya-protocol = { path = "../protocol" }
