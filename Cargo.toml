@@ -1,0 +1,32 @@
+[workspace]
+members = [
+    "crates/app",
+    "crates/commands",
+    "crates/peer",
+    "crates/persistence",
+    "crates/protocol",
+    "crates/rooms",
+    "crates/shared",
+    "crates/transport",
+    "crates/ui",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["KAYA CLI Contributors"]
+repository = "https://github.com/natanielmatondo/KAYA-CLI"
+
+[workspace.dependencies]
+crossterm = "0.28"
+ratatui = "0.29"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sled = "0.34"
+socket2 = "0.5"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1", features = ["v4", "serde"] }

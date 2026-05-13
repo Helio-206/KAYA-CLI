@@ -1,0 +1,5 @@
+/target/
+/.kaya/
+*.log
+*.tmp
+.DS_Store
