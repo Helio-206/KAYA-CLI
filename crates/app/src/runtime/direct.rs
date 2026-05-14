@@ -13,7 +13,7 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::{self, Duration};
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 const DIRECT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -620,7 +620,7 @@ async fn writer_loop(
     while let Some(packet) = receiver.recv().await {
         match write_packet(&mut writer, &packet).await {
             Ok(bytes) => {
-                info!(
+                debug!(
                     node_id = %node_id,
                     remote_addr = %remote_addr,
                     packet_id = %packet.packet_id,

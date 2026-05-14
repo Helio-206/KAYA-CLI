@@ -29,8 +29,10 @@ impl Runtime {
             } => {
                 self.ui_state.packets_tx += 1;
                 self.ui_state.bytes_tx += bytes as u64;
-                self.ui_state
-                    .push_log(format!("tx {packet_type:?} {packet_id} bytes={bytes}"));
+                if !is_noisy_packet_event(packet_type) {
+                    self.ui_state
+                        .push_log(format!("tx {packet_type:?} {packet_id} bytes={bytes}"));
+                }
             }
             KayaEvent::DirectListenerStarted { addr } => {
                 info!(%addr, "DIRECT_LISTENER_STARTED");
@@ -79,9 +81,11 @@ impl Runtime {
                 source,
                 bytes,
             } => {
-                self.ui_state.push_log(format!(
-                    "direct rx {packet_type:?} {packet_id} from {node_id} source={source} bytes={bytes}"
-                ));
+                if !is_noisy_packet_event(packet_type) {
+                    self.ui_state.push_log(format!(
+                        "direct rx {packet_type:?} {packet_id} from {node_id} source={source} bytes={bytes}"
+                    ));
+                }
             }
             KayaEvent::DirectPacketSent {
                 node_id,
@@ -91,9 +95,11 @@ impl Runtime {
             } => {
                 self.ui_state.packets_tx += 1;
                 self.ui_state.bytes_tx += bytes as u64;
-                self.ui_state.push_log(format!(
-                    "direct tx {packet_type:?} {packet_id} to {node_id} bytes={bytes}"
-                ));
+                if !is_noisy_packet_event(packet_type) {
+                    self.ui_state.push_log(format!(
+                        "direct tx {packet_type:?} {packet_id} to {node_id} bytes={bytes}"
+                    ));
+                }
             }
             KayaEvent::IdentityLoaded {
                 node_id,
@@ -115,10 +121,7 @@ impl Runtime {
             KayaEvent::PacketSignatureValid {
                 node_id,
                 fingerprint,
-            } => {
-                self.ui_state
-                    .push_log(format!("signature valid {node_id} {fingerprint}"));
-            }
+            } => debug!(%node_id, %fingerprint, "packet signature valid"),
             KayaEvent::PacketSignatureInvalid { node_id, reason } => {
                 self.ui_state
                     .push_log(format!("signature invalid {node_id}: {reason}"));
@@ -1009,5 +1012,12 @@ fn secure_packet_requires_signature(packet_type: PacketType) -> bool {
             | PacketType::DmSessionAccept
             | PacketType::DirectMessageEncrypted
             | PacketType::FileChunkEncrypted
+    )
+}
+
+fn is_noisy_packet_event(packet_type: PacketType) -> bool {
+    matches!(
+        packet_type,
+        PacketType::Heartbeat | PacketType::RouteAnnounce | PacketType::PresenceUpdate
     )
 }
