@@ -2,31 +2,48 @@ use super::Runtime;
 use kaya_events::KayaEvent;
 use kaya_protocol::{Packet, PacketType};
 use kaya_security::sign_packet;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use tokio::time::{self, Duration};
 use tracing::{info_span, warn, Instrument};
 
 impl Runtime {
-    pub(super) fn spawn_network_reader(&self) -> JoinHandle<()> {
+    pub(super) fn spawn_network_reader(
+        &self,
+        mut shutdown_rx: watch::Receiver<bool>,
+        network_recv_ms: u64,
+    ) -> JoinHandle<()> {
         let transport = self.transport.clone();
         let bus = self.bus.clone();
         tokio::spawn(async move {
             let multicast_addr = transport.multicast_addr().to_string();
             let _ = bus.publish(KayaEvent::NetworkStarted { multicast_addr });
+            let recv_timeout = Duration::from_millis(network_recv_ms);
 
             loop {
-                match transport.recv_packet().await {
-                    Ok((packet, addr, bytes)) => {
-                        let _ = bus.publish(KayaEvent::PacketReceived {
-                            packet,
-                            source: addr.to_string(),
-                            bytes,
-                        });
+                tokio::select! {
+                    changed = shutdown_rx.changed() => {
+                        if changed.is_ok() && *shutdown_rx.borrow() {
+                            break;
+                        }
                     }
-                    Err(err) => {
-                        let _ = bus.publish(KayaEvent::ErrorOccurred {
-                            scope: "transport.rx".into(),
-                            message: err.to_string(),
-                        });
+                    received = time::timeout(recv_timeout, transport.recv_packet()) => {
+                        match received {
+                            Ok(Ok((packet, addr, bytes))) => {
+                                let _ = bus.publish(KayaEvent::PacketReceived {
+                                    packet,
+                                    source: addr.to_string(),
+                                    bytes,
+                                });
+                            }
+                            Ok(Err(err)) => {
+                                let _ = bus.publish(KayaEvent::ErrorOccurred {
+                                    scope: "transport.rx".into(),
+                                    message: err.to_string(),
+                                });
+                            }
+                            Err(_) => {}
+                        }
                     }
                 }
             }
@@ -102,19 +119,33 @@ impl Runtime {
         let span = info_span!("packet.send", %packet_id, packet_type = ?packet_type);
 
         async {
-            match self.transport.send_packet(&packet).await {
-                Ok(bytes) => {
+            match time::timeout(
+                Duration::from_millis(self.timeouts.packet_send_ms),
+                self.transport.send_packet(&packet),
+            )
+            .await
+            {
+                Ok(Ok(bytes)) => {
                     self.publish(KayaEvent::PacketSent {
                         packet_id,
                         packet_type,
                         bytes,
                     });
                 }
-                Err(err) => {
+                Ok(Err(err)) => {
                     warn!(%err, "packet send failed");
                     self.publish(KayaEvent::ErrorOccurred {
                         scope: "transport.tx".into(),
                         message: err.to_string(),
+                    });
+                }
+                Err(_) => {
+                    self.publish(KayaEvent::ErrorOccurred {
+                        scope: "transport.tx".into(),
+                        message: format!(
+                            "packet send timed out after {}ms",
+                            self.timeouts.packet_send_ms
+                        ),
                     });
                 }
             }

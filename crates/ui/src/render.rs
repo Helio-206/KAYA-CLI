@@ -1,36 +1,41 @@
 use crate::theme::{
-    blue_style, connected_style, cyan_style, label_style, muted_style, value_style,
+    accent_style, blue_style, connected_style, cyan_style, danger_style, label_style, muted_style,
+    panel_style, shell_style, success_style, title_style, value_style, warning_style,
 };
-use crate::{UiPeer, UiRoom, UiState};
+use crate::{UiModal, UiPeer, UiRoom, UiState};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, Wrap};
+use ratatui::widgets::{
+    Block, BorderType, Borders, Clear, List, ListItem, Padding, Paragraph, Wrap,
+};
 use ratatui::Frame;
 
 pub(crate) fn draw_frame(frame: &mut Frame, state: &UiState) {
     let height = frame.area().height;
+    frame.render_widget(Block::default().style(shell_style()), frame.area());
+
     let constraints = if state.show_logs {
         if height < 24 {
             vec![
-                Constraint::Length(5),
+                Constraint::Length(6),
                 Constraint::Min(6),
                 Constraint::Length(7),
                 Constraint::Length(3),
             ]
         } else {
             vec![
-                Constraint::Length(6),
+                Constraint::Length(7),
                 Constraint::Min(10),
                 Constraint::Length(10),
-                Constraint::Length(3),
+                Constraint::Length(4),
             ]
         }
     } else {
         vec![
-            Constraint::Length(if height < 20 { 5 } else { 6 }),
+            Constraint::Length(if height < 20 { 6 } else { 7 }),
             Constraint::Min(8),
             Constraint::Length(6),
-            Constraint::Length(3),
+            Constraint::Length(4),
         ]
     };
 
@@ -43,34 +48,84 @@ pub(crate) fn draw_frame(frame: &mut Frame, state: &UiState) {
     draw_social(frame, chunks[1], state);
     draw_network(frame, chunks[2], state);
     draw_input(frame, chunks[3], state);
+
+    if state.show_splash {
+        draw_splash(frame, frame.area());
+    }
+    if let Some(modal) = &state.modal {
+        draw_modal(frame, frame.area(), modal);
+    }
 }
 
 fn draw_header(frame: &mut Frame, area: Rect, state: &UiState) {
+    let security_style = if state.security_warnings > 0 {
+        warning_style()
+    } else {
+        cyan_style()
+    };
     let lines = vec![
         Line::from(vec![
-            Span::styled("SPACE: ", label_style()),
+            Span::styled("KAYA CLI", title_style()),
+            Span::raw("   "),
+            Span::styled("LAN-FIRST OPS CONSOLE", accent_style()),
+            Span::raw("   "),
+            Span::styled(
+                format!(
+                    "[{}]",
+                    if state.status.eq_ignore_ascii_case("DEMO") {
+                        "DEMO"
+                    } else {
+                        &state.status
+                    }
+                ),
+                if state.status.eq_ignore_ascii_case("DEMO") {
+                    warning_style()
+                } else {
+                    connected_style()
+                },
+            ),
+            Span::raw(" "),
+            Span::styled(format!("[{}]", state.presence), cyan_style()),
+        ]),
+        Line::from(vec![
+            Span::styled("SPACE ", label_style()),
             Span::styled(&state.space, value_style()),
-            Span::raw("    "),
-            Span::styled("ROOM: ", label_style()),
+            Span::raw("   "),
+            Span::styled("ROOM ", label_style()),
             Span::styled(format!("#{}", state.current_room), cyan_style()),
+            Span::raw("   "),
+            Span::styled("FINGERPRINT ", label_style()),
+            Span::styled(&state.identity_fingerprint, security_style),
         ]),
         Line::from(vec![
-            Span::styled("NODE: ", label_style()),
+            Span::styled("NODE ", label_style()),
             Span::styled(&state.node_id, value_style()),
-            Span::raw("    "),
-            Span::styled("CALLSIGN: ", label_style()),
-            Span::styled(&state.callsign, value_style()),
+            Span::raw("   "),
+            Span::styled("CALLSIGN ", label_style()),
+            Span::styled(&state.callsign, accent_style()),
+            Span::raw("   "),
+            Span::styled("SESSIONS ", label_style()),
+            Span::styled(state.secure_sessions.to_string(), value_style()),
+            Span::raw("   "),
+            Span::styled("TRUSTED ", label_style()),
+            Span::styled(state.trusted_peers.to_string(), success_style()),
+            Span::raw("   "),
+            Span::styled("WARN ", label_style()),
+            Span::styled(state.security_warnings.to_string(), warning_style()),
         ]),
         Line::from(vec![
-            Span::styled("STATUS: ", label_style()),
-            Span::styled(&state.status, connected_style()),
-            Span::raw("    "),
-            Span::styled("PRESENCE: ", label_style()),
-            Span::styled(state.presence.to_string(), cyan_style()),
+            Span::styled("QUICK ", label_style()),
+            Span::styled("/help", muted_style()),
+            Span::raw("  "),
+            Span::styled("/who", muted_style()),
+            Span::raw("  "),
+            Span::styled("/join semana-info", muted_style()),
+            Span::raw("  "),
+            Span::styled("/secure-msg Ana teste", muted_style()),
         ]),
     ];
 
-    frame.render_widget(Paragraph::new(lines).block(kaya_block(" KAYA ")), area);
+    frame.render_widget(Paragraph::new(lines).block(panel_block(" KAYA ")), area);
 }
 
 fn draw_social(frame: &mut Frame, area: Rect, state: &UiState) {
@@ -99,24 +154,48 @@ fn draw_rooms(frame: &mut Frame, area: Rect, state: &UiState) {
         .iter()
         .map(|room| {
             let marker = if room.current {
-                ">"
+                "LIVE"
             } else if room.joined {
-                "*"
+                "JOINED"
             } else {
-                " "
+                "KNOWN"
             };
-            ListItem::new(Line::from(vec![
-                Span::styled(marker, cyan_style()),
-                Span::raw(" #"),
-                Span::styled(room.name.clone(), room_style(room)),
-                Span::styled(format!(" ({})", room.member_count), muted_style()),
-            ]))
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(format!("[{marker}] "), room_style(room)),
+                    Span::styled(format!("#{}", room.name), room_style(room)),
+                ]),
+                Line::from(vec![
+                    Span::styled("members ", label_style()),
+                    Span::styled(room.member_count.to_string(), muted_style()),
+                ]),
+            ])
         })
         .collect();
-    frame.render_widget(List::new(items).block(kaya_block(" ROOMS ")), area);
+    frame.render_widget(List::new(items).block(panel_block(" ROOMS ")), area);
 }
 
 fn draw_messages(frame: &mut Frame, area: Rect, state: &UiState) {
+    if state.messages.is_empty() {
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(Span::styled("ROOM TRAFFIC WILL LAND HERE.", accent_style())),
+                Line::from(Span::styled(
+                    "Start with /join semana-info and then type a message without slash.",
+                    muted_style(),
+                )),
+                Line::from(Span::styled(
+                    "Good live checks: /who  /peers --fingerprints  /status",
+                    muted_style(),
+                )),
+            ])
+            .block(panel_block(" CHAT "))
+            .wrap(Wrap { trim: true }),
+            area,
+        );
+        return;
+    }
+
     let visible_height = area.height.saturating_sub(2) as usize;
     let bottom = state
         .messages
@@ -126,36 +205,69 @@ fn draw_messages(frame: &mut Frame, area: Rect, state: &UiState) {
     let items: Vec<ListItem> = state.messages[start..bottom]
         .iter()
         .map(|message| {
-            let prefix = if message.direct {
+            if message.direct && looks_like_decorated_demo_message(&message.body) {
+                return ListItem::new(Line::from(vec![
+                    Span::styled(short_time(&message.timestamp), muted_style()),
+                    Span::raw(" "),
+                    Span::styled(message.body.clone(), accent_style()),
+                ]));
+            }
+
+            let (prefix, prefix_style, body_style) = if message.from == "system" {
+                (
+                    format!("{} [SYSTEM]", short_time(&message.timestamp)),
+                    warning_style(),
+                    muted_style(),
+                )
+            } else if message.direct {
                 let target = message.target.as_deref().unwrap_or("me");
                 let marker = if message.encrypted {
                     "[SECURE]"
                 } else {
                     "[DM]"
                 };
-                format!(
-                    "{} {} {} -> {}: ",
-                    short_time(&message.timestamp),
-                    marker,
-                    message.from,
-                    target
+                (
+                    format!(
+                        "{} {} {} -> {}",
+                        short_time(&message.timestamp),
+                        marker,
+                        message.from,
+                        target
+                    ),
+                    if message.encrypted {
+                        cyan_style()
+                    } else {
+                        accent_style()
+                    },
+                    value_style(),
+                )
+            } else if message.local {
+                (
+                    format!(
+                        "{} [#{}] YOU",
+                        short_time(&message.timestamp),
+                        message.room.as_deref().unwrap_or("geral")
+                    ),
+                    success_style(),
+                    value_style(),
                 )
             } else {
-                format!(
-                    "{} [#{}] {}: ",
-                    short_time(&message.timestamp),
-                    message.room.as_deref().unwrap_or("geral"),
-                    message.from
+                (
+                    format!(
+                        "{} [#{}] {}",
+                        short_time(&message.timestamp),
+                        message.room.as_deref().unwrap_or("geral"),
+                        message.from
+                    ),
+                    value_style(),
+                    value_style(),
                 )
             };
-            let style = if message.direct {
-                cyan_style()
-            } else {
-                value_style()
-            };
+
             ListItem::new(Line::from(vec![
-                Span::styled(prefix, style),
-                Span::raw(message.body.clone()),
+                Span::styled(prefix, prefix_style),
+                Span::raw(": "),
+                Span::styled(message.body.clone(), body_style),
             ]))
         })
         .collect();
@@ -165,7 +277,7 @@ fn draw_messages(frame: &mut Frame, area: Rect, state: &UiState) {
     } else {
         " CHAT scroll "
     };
-    frame.render_widget(List::new(items).block(kaya_block(title)), area);
+    frame.render_widget(List::new(items).block(panel_block(title)), area);
 }
 
 fn draw_peers(frame: &mut Frame, area: Rect, state: &UiState) {
@@ -182,35 +294,52 @@ fn draw_peers(frame: &mut Frame, area: Rect, state: &UiState) {
     let member_items: Vec<ListItem> = state
         .current_members
         .iter()
-        .map(|member| ListItem::new(Line::from(Span::styled(member.clone(), value_style()))))
-        .collect();
-    frame.render_widget(
-        List::new(member_items).block(kaya_block(" MEMBERS ")),
-        chunks[0],
-    );
-
-    let peer_items: Vec<ListItem> = state
-        .peers
-        .iter()
-        .map(|peer| {
+        .map(|member| {
             ListItem::new(Line::from(vec![
-                Span::styled(peer.callsign.clone(), peer_style(peer)),
-                Span::raw(" "),
-                Span::styled(peer.presence.to_string(), muted_style()),
-                Span::raw(" "),
-                Span::styled(peer.node_id.clone(), muted_style()),
-                Span::raw(" "),
-                Span::styled(
-                    peer.fingerprint.clone().unwrap_or_else(|| "--".into()),
-                    muted_style(),
-                ),
-                Span::raw(" "),
-                Span::styled(peer.trust_status.clone(), muted_style()),
+                Span::styled("[room] ", label_style()),
+                Span::styled(member.clone(), value_style()),
             ]))
         })
         .collect();
     frame.render_widget(
-        List::new(peer_items).block(kaya_block(" PEERS ")),
+        List::new(member_items).block(panel_block(" MEMBERS ")),
+        chunks[0],
+    );
+
+    let peer_limit = (chunks[1].height.saturating_sub(2) as usize / 2).max(1);
+    let peer_items: Vec<ListItem> = state
+        .peers
+        .iter()
+        .take(peer_limit)
+        .map(|peer| {
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(peer.callsign.clone(), peer_style(peer)),
+                    Span::raw(" "),
+                    Span::styled(format!("[{}]", peer.presence), muted_style()),
+                    Span::raw(" "),
+                    Span::styled(format!("[{}]", peer.trust_status), trust_style(peer)),
+                ]),
+                Line::from(vec![
+                    Span::styled(peer.node_id.clone(), muted_style()),
+                    Span::raw("  "),
+                    Span::styled(
+                        peer.fingerprint.clone().unwrap_or_else(|| "--".into()),
+                        muted_style(),
+                    ),
+                    Span::raw("  "),
+                    Span::styled(
+                        peer.latency_ms
+                            .map(|value| format!("{value}ms"))
+                            .unwrap_or_else(|| "--".into()),
+                        label_style(),
+                    ),
+                ]),
+            ])
+        })
+        .collect();
+    frame.render_widget(
+        List::new(peer_items).block(panel_block(" PEERS ")),
         chunks[1],
     );
 
@@ -219,6 +348,13 @@ fn draw_peers(frame: &mut Frame, area: Rect, state: &UiState) {
     let dm_items: Vec<ListItem> = state.direct_messages[start..]
         .iter()
         .map(|message| {
+            if looks_like_decorated_demo_message(&message.body) {
+                return ListItem::new(Line::from(vec![
+                    Span::styled(short_time(&message.timestamp), muted_style()),
+                    Span::raw(" "),
+                    Span::styled(message.body.clone(), accent_style()),
+                ]));
+            }
             let target = message.target.as_deref().unwrap_or("me");
             let marker = if message.encrypted {
                 "[SECURE]"
@@ -228,38 +364,56 @@ fn draw_peers(frame: &mut Frame, area: Rect, state: &UiState) {
             ListItem::new(Line::from(vec![
                 Span::styled(short_time(&message.timestamp), muted_style()),
                 Span::raw(" "),
-                Span::styled(marker, cyan_style()),
+                Span::styled(
+                    marker,
+                    if message.encrypted {
+                        cyan_style()
+                    } else {
+                        accent_style()
+                    },
+                ),
                 Span::raw(" "),
-                Span::styled(format!("{} -> {target}", message.from), cyan_style()),
+                Span::styled(format!("{} -> {target}", message.from), value_style()),
                 Span::raw(": "),
-                Span::raw(message.body.clone()),
+                Span::styled(message.body.clone(), value_style()),
             ]))
         })
         .collect();
-    frame.render_widget(List::new(dm_items).block(kaya_block(" DMS ")), chunks[2]);
+    frame.render_widget(List::new(dm_items).block(panel_block(" DMS ")), chunks[2]);
 
+    let file_limit = (chunks[3].height.saturating_sub(2) as usize / 2).max(1);
     let file_items: Vec<ListItem> = state
         .files
         .iter()
-        .take(chunks[3].height.saturating_sub(2) as usize)
+        .take(file_limit)
         .map(|file| {
             let trust = if file.trusted { "trusted" } else { "unknown" };
             let signed = if file.signed { "signed" } else { "unsigned" };
-            ListItem::new(Line::from(vec![
-                Span::styled(file.file_name.clone(), value_style()),
-                Span::raw(" "),
-                Span::styled(format!("{:.0}%", file.percent), cyan_style()),
-                Span::raw(" "),
-                Span::styled(file.status.clone(), muted_style()),
-                Span::raw(" "),
-                Span::styled(file.security.clone(), muted_style()),
-                Span::raw(" "),
-                Span::styled(format!("{trust}/{signed}"), muted_style()),
-            ]))
+            let hash_label = match file.hash_ok {
+                Some(true) => "hash-ok",
+                Some(false) => "hash-fail",
+                None => "hash-pending",
+            };
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(file.file_name.clone(), value_style()),
+                    Span::raw(" "),
+                    Span::styled(format!("{:.0}%", file.percent), cyan_style()),
+                ]),
+                Line::from(vec![
+                    Span::styled(file.peer.clone(), label_style()),
+                    Span::raw("  "),
+                    Span::styled(file.status.clone(), muted_style()),
+                    Span::raw("  "),
+                    Span::styled(file.security.clone(), muted_style()),
+                    Span::raw("  "),
+                    Span::styled(format!("{trust}/{signed}/{hash_label}"), muted_style()),
+                ]),
+            ])
         })
         .collect();
     frame.render_widget(
-        List::new(file_items).block(kaya_block(" FILES ")),
+        List::new(file_items).block(panel_block(" FILES ")),
         chunks[3],
     );
 }
@@ -271,60 +425,60 @@ fn draw_network(frame: &mut Frame, area: Rect, state: &UiState) {
         .unwrap_or_else(|| "--".into());
     let mut lines = vec![
         Line::from(vec![
-            Span::styled("peers: ", label_style()),
-            Span::styled(online.to_string(), value_style()),
-            Span::raw("    "),
-            Span::styled("latency avg: ", label_style()),
+            Span::styled("LAN ", label_style()),
+            Span::styled(format!("[{online} peers]"), success_style()),
+            Span::raw("   "),
+            Span::styled("LAT ", label_style()),
             Span::styled(avg_latency, value_style()),
-            Span::raw("    "),
-            Span::styled("packets tx/rx: ", label_style()),
+            Span::raw("   "),
+            Span::styled("PKTS ", label_style()),
             Span::styled(
                 format!("{} / {}", state.packets_tx, state.packets_rx),
                 value_style(),
             ),
-            Span::raw("    "),
-            Span::styled("uptime: ", label_style()),
+            Span::raw("   "),
+            Span::styled("UP ", label_style()),
             Span::styled(
                 format_duration(state.diagnostics.uptime_secs),
                 value_style(),
             ),
         ]),
         Line::from(vec![
-            Span::styled("room: ", label_style()),
+            Span::styled("ROOM ", label_style()),
             Span::styled(format!("#{}", state.current_room), cyan_style()),
-            Span::raw("    "),
-            Span::styled("heartbeat: ", label_style()),
+            Span::raw("   "),
+            Span::styled("HEARTBEAT ", label_style()),
             Span::styled(
                 format!("{}s", state.diagnostics.heartbeat_interval_secs),
                 value_style(),
             ),
-            Span::raw("    "),
-            Span::styled("timeout: ", label_style()),
+            Span::raw("   "),
+            Span::styled("TIMEOUT ", label_style()),
             Span::styled(
                 format!("{}s", state.diagnostics.peer_timeout_secs),
                 value_style(),
             ),
-            Span::raw("    "),
-            Span::styled("render: ", label_style()),
+            Span::raw("   "),
+            Span::styled("RENDER ", label_style()),
             Span::styled(
                 format!("{}ms", state.diagnostics.render_time_ms),
                 value_style(),
             ),
-            Span::raw("    "),
-            Span::styled("limit: ", label_style()),
+            Span::raw("   "),
+            Span::styled("LIMIT ", label_style()),
             Span::styled(
                 format!("{}b", state.diagnostics.packet_max_bytes),
                 value_style(),
             ),
         ]),
         Line::from(vec![
-            Span::styled("bytes tx/rx: ", label_style()),
+            Span::styled("BYTES ", label_style()),
             Span::styled(
                 format!("{} / {}", state.bytes_tx, state.bytes_rx),
                 value_style(),
             ),
-            Span::raw("    "),
-            Span::styled("events: ", label_style()),
+            Span::raw("   "),
+            Span::styled("EVENTS ", label_style()),
             Span::styled(
                 format!(
                     "{} ({} /s)",
@@ -332,8 +486,8 @@ fn draw_network(frame: &mut Frame, area: Rect, state: &UiState) {
                 ),
                 value_style(),
             ),
-            Span::raw("    "),
-            Span::styled("drops/malformed: ", label_style()),
+            Span::raw("   "),
+            Span::styled("DROPS ", label_style()),
             Span::styled(
                 format!(
                     "{} / {}",
@@ -341,8 +495,8 @@ fn draw_network(frame: &mut Frame, area: Rect, state: &UiState) {
                 ),
                 value_style(),
             ),
-            Span::raw("    "),
-            Span::styled("mem: ", label_style()),
+            Span::raw("   "),
+            Span::styled("MEM ", label_style()),
             Span::styled(format_memory(state.diagnostics.memory_kb), value_style()),
         ]),
         Line::from(peer_line(state)),
@@ -367,27 +521,129 @@ fn draw_network(frame: &mut Frame, area: Rect, state: &UiState) {
 
     frame.render_widget(
         Paragraph::new(lines)
-            .block(kaya_block(" NETWORK "))
+            .block(panel_block(" NETWORK "))
             .wrap(Wrap { trim: true }),
         area,
     );
 }
 
 fn draw_input(frame: &mut Frame, area: Rect, state: &UiState) {
-    let input = Paragraph::new(Line::from(vec![
-        Span::styled("> ", cyan_style()),
-        Span::raw(&state.input),
-    ]))
-    .block(kaya_block(" INPUT "));
+    let input = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled("COMMAND ", label_style()),
+            Span::styled("> ", accent_style()),
+            Span::styled(&state.input, value_style()),
+        ]),
+        Line::from(vec![
+            Span::styled("HINT ", label_style()),
+            Span::styled(command_hint(state), muted_style()),
+        ]),
+    ])
+    .block(panel_block(" INPUT "));
     frame.render_widget(input, area);
 }
 
-fn kaya_block(title: &'static str) -> Block<'static> {
+fn draw_splash(frame: &mut Frame, area: Rect) {
+    let area = centered_rect(area, 76, 15);
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::from(Span::styled("KAYA CLI", title_style())),
+            Line::from(Span::styled(
+                "LOCAL-FIRST COMMUNICATION FOR TEMPORARY DIGITAL COMMUNITIES",
+                accent_style(),
+            )),
+            Line::from(Span::raw("")),
+            Line::from(Span::styled(
+                "No cloud. No server. Shared local space, rooms, DMs, files and mesh diagnostics.",
+                value_style(),
+            )),
+            Line::from(Span::styled(
+                "Quick start: /help  /who  /join semana-info  /msg Ana teste",
+                muted_style(),
+            )),
+            Line::from(Span::styled(
+                "Demo mode: /demo-peers 3  /demo-message semana-info 4  /demo-mesh-route",
+                muted_style(),
+            )),
+            Line::from(Span::styled(
+                "Inspect with: /status  /peers --fingerprints  /routes  /sessions",
+                muted_style(),
+            )),
+            Line::from(Span::raw("")),
+            Line::from(Span::styled("Press any key to begin.", warning_style())),
+        ])
+        .block(panel_block(" START "))
+        .wrap(Wrap { trim: true }),
+        area,
+    );
+}
+
+fn draw_modal(frame: &mut Frame, area: Rect, modal: &UiModal) {
+    let area = centered_rect(area, 72, 8);
+    frame.render_widget(Clear, area);
+    let (title, lines): (&str, Vec<Line>) = match modal {
+        UiModal::FileOffer {
+            file_id,
+            file_name,
+            from_callsign,
+            encrypted,
+        } => (
+            " FILE OFFER ",
+            vec![
+                Line::from(Span::styled(
+                    format!("{} offers {}", from_callsign, file_name),
+                    accent_style(),
+                )),
+                Line::from(Span::styled(
+                    format!(
+                        "id={} security={} accept=/accept-file {} reject=/reject-file {}",
+                        file_id,
+                        if *encrypted {
+                            "encrypted"
+                        } else {
+                            "unencrypted"
+                        },
+                        file_id,
+                        file_id
+                    ),
+                    muted_style(),
+                )),
+            ],
+        ),
+        UiModal::TrustWarning { node_id, message } => (
+            " TRUST WARNING ",
+            vec![
+                Line::from(Span::styled(
+                    node_id
+                        .as_ref()
+                        .map(|node| format!("peer={} {message}", node))
+                        .unwrap_or_else(|| message.clone()),
+                    warning_style(),
+                )),
+                Line::from(Span::styled(
+                    "Review fingerprints and trust state before sending secure data.",
+                    muted_style(),
+                )),
+            ],
+        ),
+    };
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(panel_block(title))
+            .wrap(Wrap { trim: true }),
+        area,
+    );
+}
+
+fn panel_block(title: &'static str) -> Block<'static> {
     Block::default()
-        .title(title)
+        .title(Span::styled(title, title_style()))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(blue_style())
+        .style(panel_style())
+        .padding(Padding::new(1, 1, 0, 0))
 }
 
 fn peer_line(state: &UiState) -> Vec<Span<'_>> {
@@ -423,15 +679,23 @@ fn peer_summary(peer: &UiPeer) -> String {
 
 fn peer_style(peer: &UiPeer) -> ratatui::style::Style {
     if peer.online {
-        value_style()
+        accent_style()
     } else {
         muted_style()
     }
 }
 
+fn trust_style(peer: &UiPeer) -> ratatui::style::Style {
+    match peer.trust_status.as_str() {
+        "trusted" => success_style(),
+        "blocked" => danger_style(),
+        _ => muted_style(),
+    }
+}
+
 fn room_style(room: &UiRoom) -> ratatui::style::Style {
     if room.current {
-        cyan_style()
+        accent_style()
     } else if room.joined {
         value_style()
     } else {
@@ -453,7 +717,7 @@ fn event_counter_line(state: &UiState) -> Vec<Span<'_>> {
         if index > 0 {
             spans.push(Span::raw("  "));
         }
-        spans.push(Span::styled(format!("{kind}={count}"), muted_style()));
+        spans.push(Span::styled(format!("{kind}={count}"), accent_style()));
     }
     spans
 }
@@ -472,7 +736,14 @@ fn mesh_line(state: &UiState) -> Vec<Span<'_>> {
     };
     vec![
         Span::styled("mesh: ", label_style()),
-        Span::styled(enabled, value_style()),
+        Span::styled(
+            enabled,
+            if state.mesh.enabled {
+                success_style()
+            } else {
+                muted_style()
+            },
+        ),
         Span::raw("    "),
         Span::styled("routes: ", label_style()),
         Span::styled(state.mesh.routes.to_string(), value_style()),
@@ -490,7 +761,7 @@ fn mesh_line(state: &UiState) -> Vec<Span<'_>> {
         Span::styled(state.mesh.avg_hop_count.to_string(), value_style()),
         Span::raw("    "),
         Span::styled("trace: ", label_style()),
-        Span::styled(trace, muted_style()),
+        Span::styled(trace, accent_style()),
     ]
 }
 
@@ -519,21 +790,69 @@ fn format_memory(memory_kb: Option<u64>) -> String {
         .unwrap_or_else(|| "--".into())
 }
 
+fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Fill(1),
+            Constraint::Length(height.min(area.height)),
+            Constraint::Fill(1),
+        ])
+        .split(area);
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Fill(1),
+            Constraint::Length(width.min(area.width)),
+            Constraint::Fill(1),
+        ])
+        .split(vertical[1])[1]
+}
+
+fn command_hint(state: &UiState) -> String {
+    const HINTS: &[&str] = &[
+        "/help",
+        "/who",
+        "/join semana-info",
+        "/msg Ana teste",
+        "/secure-msg Ana segredo",
+        "/send Ana ./docs/PROTOCOL.md",
+        "/demo-peers 3",
+    ];
+    let input = state.input.trim();
+    if input.starts_with('/') {
+        let filtered: Vec<_> = HINTS
+            .iter()
+            .copied()
+            .filter(|hint| hint.starts_with(input))
+            .take(3)
+            .collect();
+        if !filtered.is_empty() {
+            return filtered.join("  |  ");
+        }
+    }
+    HINTS[..4].join("  |  ")
+}
+
+fn looks_like_decorated_demo_message(body: &str) -> bool {
+    body.starts_with("[SECURE][MESH:") || body.starts_with("[MESH:")
+}
+
 fn security_line(state: &UiState) -> Vec<Span<'_>> {
     vec![
         Span::styled("security: ", label_style()),
         Span::styled(&state.identity_fingerprint, cyan_style()),
         Span::raw("    "),
         Span::styled("trusted: ", label_style()),
-        Span::styled(state.trusted_peers.to_string(), value_style()),
+        Span::styled(state.trusted_peers.to_string(), success_style()),
         Span::raw("    "),
         Span::styled("blocked: ", label_style()),
-        Span::styled(state.blocked_peers.to_string(), value_style()),
+        Span::styled(state.blocked_peers.to_string(), danger_style()),
         Span::raw("    "),
         Span::styled("sessions: ", label_style()),
-        Span::styled(state.secure_sessions.to_string(), value_style()),
+        Span::styled(state.secure_sessions.to_string(), accent_style()),
         Span::raw("    "),
         Span::styled("warnings: ", label_style()),
-        Span::styled(state.security_warnings.to_string(), value_style()),
+        Span::styled(state.security_warnings.to_string(), warning_style()),
     ]
 }

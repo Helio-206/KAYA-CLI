@@ -768,6 +768,25 @@ impl SecureSessionManager {
             .count()
     }
 
+    pub fn expire_before(&mut self, cutoff_ms: u64) -> Vec<SecureSessionView> {
+        let expired: Vec<_> = self
+            .sessions
+            .values()
+            .filter(|session| session.last_used_at.parse::<u64>().unwrap_or(u64::MAX) < cutoff_ms)
+            .map(SecureSession::view)
+            .collect();
+
+        for session in &expired {
+            if let Some(entry) = self.sessions.get_mut(&session.peer_node_id) {
+                entry.status = SecureSessionStatus::Closed;
+                entry.key = None;
+                entry.last_used_at = now_millis().to_string();
+            }
+        }
+
+        expired
+    }
+
     fn active_session_mut(&mut self, peer_node_id: &str) -> Result<&mut SecureSession> {
         let session = self
             .sessions

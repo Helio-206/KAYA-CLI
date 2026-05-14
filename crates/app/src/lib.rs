@@ -3,26 +3,50 @@ mod logging;
 mod prompt;
 mod runtime;
 
+use clap::Parser;
 use kaya_events::EventBus;
 use kaya_files::{FileStore, FileTransferConfig};
 use kaya_mesh::MeshPolicy;
-use kaya_persistence::{default_data_dir, ConfigStore, Store};
+use kaya_persistence::{profile_data_dir, ConfigProfile, ConfigStore, Store};
 use kaya_security::{IdentityStore, TrustStore};
 use kaya_shared::{KayaError, Result};
 use kaya_transport::{MulticastTransport, TransportConfig};
 use logging::init_tracing;
-use prompt::prompt_callsign;
+use prompt::prompt_callsign_if_needed;
 use runtime::{Runtime, RuntimeInit};
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 
 pub async fn run() -> Result<()> {
-    let data_dir = default_data_dir();
+    run_with_args(std::env::args_os()).await
+}
+
+pub async fn run_with_args<I, T>(args: I) -> Result<()>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    let options = RuntimeOptions::parse_from(args);
+    if options.version {
+        println!("KAYA CLI {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    if options.about {
+        println!("KAYA CLI {}", about_text());
+        return Ok(());
+    }
+
+    let data_dir = options.data_dir();
     let config_store = ConfigStore::new(&data_dir);
     let mut config = config_store.load_or_create()?;
+    config.apply_profile(options.profile);
     init_tracing(&config.log_level);
 
     let store = Store::open(&data_dir)?;
-    let callsign = prompt_callsign(config.nickname.as_deref())?;
+    let callsign = prompt_callsign_if_needed(
+        config.nickname.as_deref(),
+        options.demo.then_some(options.profile),
+    )?;
     config.nickname = Some(callsign.clone());
     config_store.save(&config)?;
     let identity_store = IdentityStore::new(&data_dir);
@@ -44,6 +68,8 @@ pub async fn run() -> Result<()> {
         store,
         config_store,
         config,
+        profile: options.profile,
+        demo_mode: options.demo,
         bus,
         trust_store,
         identity_created,
@@ -52,6 +78,43 @@ pub async fn run() -> Result<()> {
         mesh_policy,
     });
     runtime.run().await
+}
+
+#[derive(Debug, Clone, Parser)]
+#[command(
+    name = "kaya",
+    disable_version_flag = true,
+    disable_help_subcommand = true
+)]
+pub struct RuntimeOptions {
+    #[arg(long)]
+    pub demo: bool,
+    #[arg(long, value_name = "PROFILE", default_value = "default")]
+    pub profile: ConfigProfile,
+    #[arg(long = "data-dir", value_name = "PATH")]
+    pub data_dir_override: Option<PathBuf>,
+    #[arg(long)]
+    pub version: bool,
+    #[arg(long)]
+    pub about: bool,
+}
+
+impl RuntimeOptions {
+    pub fn data_dir(&self) -> PathBuf {
+        if let Some(path) = &self.data_dir_override {
+            return path.clone();
+        }
+
+        if self.demo {
+            return profile_data_dir(ConfigProfile::Demo);
+        }
+
+        profile_data_dir(self.profile)
+    }
+}
+
+pub(crate) fn about_text() -> &'static str {
+    "0.1.0\nLocal-first communication for temporary digital communities.\nUse --demo for isolated presentation mode or --profile <default|demo|lab|paranoid>."
 }
 
 fn file_transfer_config(config: &kaya_persistence::KayaConfig) -> FileTransferConfig {
@@ -88,4 +151,26 @@ fn transport_config(config: &kaya_persistence::KayaConfig) -> Result<TransportCo
         loopback: true,
         max_packet_bytes: config.packet_max_bytes,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_demo_and_profile_options() {
+        let options = RuntimeOptions::parse_from(["kaya", "--demo", "--profile", "paranoid"]);
+
+        assert!(options.demo);
+        assert_eq!(options.profile, ConfigProfile::Paranoid);
+        assert!(options.data_dir().ends_with(".kaya-demo"));
+    }
+
+    #[test]
+    fn uses_profile_directory_when_not_demo() {
+        let options = RuntimeOptions::parse_from(["kaya", "--profile", "lab"]);
+
+        assert_eq!(options.profile, ConfigProfile::Lab);
+        assert!(options.data_dir().ends_with(".kaya-lab"));
+    }
 }

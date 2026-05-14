@@ -60,9 +60,9 @@
 
 - Diagnostics dashboard.
 - Packet inspector.
-- Lab simulator.
-- Scripted scenarios.
-- Distribution packages.
+- Lab simulator and profile-backed startup modes.
+- Scripted scenarios and demo mode.
+- Distribution packages and release candidate checklist.
 
 ## Phase 2A: Social Synchronization
 

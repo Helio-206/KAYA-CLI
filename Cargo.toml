@@ -24,6 +24,7 @@ authors = ["KAYA CLI Contributors"]
 repository = "https://github.com/natanielmatondo/KAYA-CLI"
 
 [workspace.dependencies]
+clap = { version = "4.5", features = ["derive"] }
 crossterm = "0.28"
 ratatui = "0.29"
 chacha20poly1305 = "0.10"

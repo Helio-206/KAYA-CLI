@@ -2,6 +2,7 @@ use kaya_shared::{KayaError, Result, DEFAULT_ROOM};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use uuid::Uuid;
 
 const HISTORY_PREFIX: &str = "history:";
@@ -23,6 +24,53 @@ pub struct KayaConfig {
     pub file_transfer: FileTransferSettings,
     #[serde(default)]
     pub mesh: MeshSettings,
+    #[serde(default)]
+    pub timeouts: TimeoutSettings,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConfigProfile {
+    Default,
+    Demo,
+    Lab,
+    Paranoid,
+}
+
+impl ConfigProfile {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Demo => "demo",
+            Self::Lab => "lab",
+            Self::Paranoid => "paranoid",
+        }
+    }
+
+    pub fn default_data_dir(self) -> PathBuf {
+        match self {
+            Self::Demo => default_named_data_dir(".kaya-demo"),
+            Self::Lab => default_named_data_dir(".kaya-lab"),
+            Self::Paranoid => default_named_data_dir(".kaya-paranoid"),
+            Self::Default => default_named_data_dir(".kaya"),
+        }
+    }
+}
+
+impl FromStr for ConfigProfile {
+    type Err = KayaError;
+
+    fn from_str(value: &str) -> Result<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "default" => Ok(Self::Default),
+            "demo" => Ok(Self::Demo),
+            "lab" => Ok(Self::Lab),
+            "paranoid" => Ok(Self::Paranoid),
+            other => Err(KayaError::Config(format!(
+                "unknown profile {other}; expected default, demo, lab or paranoid"
+            ))),
+        }
+    }
 }
 
 impl Default for KayaConfig {
@@ -40,6 +88,7 @@ impl Default for KayaConfig {
             log_level: "kaya=info".into(),
             file_transfer: FileTransferSettings::default(),
             mesh: MeshSettings::default(),
+            timeouts: TimeoutSettings::default(),
         }
     }
 }
@@ -74,6 +123,29 @@ pub struct MeshSettings {
     pub relay_encrypted_only: bool,
     pub route_expiry_seconds: u64,
     pub max_seen_packets: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimeoutSettings {
+    pub packet_send_ms: u64,
+    pub secure_session_ms: u64,
+    pub file_transfer_idle_ms: u64,
+    pub route_discovery_ms: u64,
+    pub shutdown_ms: u64,
+    pub network_recv_ms: u64,
+}
+
+impl Default for TimeoutSettings {
+    fn default() -> Self {
+        Self {
+            packet_send_ms: 1_500,
+            secure_session_ms: 10_000,
+            file_transfer_idle_ms: 30_000,
+            route_discovery_ms: 5_000,
+            shutdown_ms: 3_000,
+            network_recv_ms: 1_000,
+        }
+    }
 }
 
 impl Default for MeshSettings {
@@ -156,7 +228,49 @@ impl KayaConfig {
                 "mesh.max_seen_packets must be greater than 0".into(),
             ));
         }
+        if self.timeouts.packet_send_ms == 0
+            || self.timeouts.secure_session_ms == 0
+            || self.timeouts.file_transfer_idle_ms == 0
+            || self.timeouts.route_discovery_ms == 0
+            || self.timeouts.shutdown_ms == 0
+            || self.timeouts.network_recv_ms == 0
+        {
+            return Err(KayaError::Config(
+                "timeout values must be greater than 0".into(),
+            ));
+        }
         Ok(())
+    }
+
+    pub fn apply_profile(&mut self, profile: ConfigProfile) {
+        match profile {
+            ConfigProfile::Default => {}
+            ConfigProfile::Demo => {
+                self.log_level = "kaya=info".into();
+                self.default_room = "semana-info".into();
+                self.file_transfer.accept_from_unknown = true;
+                self.mesh.enabled = true;
+                self.mesh.allow_relay_for_unknown = true;
+                self.mesh.relay_encrypted_only = false;
+                self.timeouts.route_discovery_ms = 2_500;
+            }
+            ConfigProfile::Lab => {
+                self.log_level = "kaya=debug".into();
+                self.peer_timeout_secs = self.peer_timeout_secs.max(15);
+                self.mesh.route_expiry_seconds = self.mesh.route_expiry_seconds.max(180);
+                self.file_transfer.max_file_size_mb = self.file_transfer.max_file_size_mb.max(100);
+                self.timeouts.file_transfer_idle_ms =
+                    self.timeouts.file_transfer_idle_ms.max(45_000);
+            }
+            ConfigProfile::Paranoid => {
+                self.log_level = "kaya=info,kaya_security=debug".into();
+                self.file_transfer.accept_from_unknown = false;
+                self.mesh.allow_relay_for_unknown = false;
+                self.mesh.allow_relay_for_blocked = false;
+                self.mesh.relay_encrypted_only = true;
+                self.timeouts.secure_session_ms = self.timeouts.secure_session_ms.min(8_000);
+            }
+        }
     }
 }
 
@@ -319,6 +433,13 @@ impl Store {
         peers.sort_by(|left, right| left.callsign.cmp(&right.callsign));
         Ok(peers)
     }
+
+    pub fn flush(&self) -> Result<()> {
+        self.db
+            .flush()
+            .map(|_| ())
+            .map_err(|err| KayaError::Storage(err.to_string()))
+    }
 }
 
 pub fn default_data_dir() -> PathBuf {
@@ -326,11 +447,23 @@ pub fn default_data_dir() -> PathBuf {
         return PathBuf::from(path);
     }
 
-    if let Ok(home) = std::env::var("HOME") {
-        return PathBuf::from(home).join(".kaya");
+    default_named_data_dir(".kaya")
+}
+
+pub fn profile_data_dir(profile: ConfigProfile) -> PathBuf {
+    if let Ok(path) = std::env::var("KAYA_HOME") {
+        return PathBuf::from(path);
     }
 
-    PathBuf::from(".kaya")
+    profile.default_data_dir()
+}
+
+fn default_named_data_dir(dir_name: &str) -> PathBuf {
+    if let Ok(home) = std::env::var("HOME") {
+        return PathBuf::from(home).join(dir_name);
+    }
+
+    PathBuf::from(dir_name)
 }
 
 #[cfg(test)]
@@ -361,6 +494,7 @@ mod tests {
             log_level: "kaya=debug".into(),
             file_transfer: FileTransferSettings::default(),
             mesh: MeshSettings::default(),
+            timeouts: TimeoutSettings::default(),
         };
 
         config_store.save(&config).unwrap();
@@ -388,6 +522,36 @@ mod tests {
 
         drop(store);
         let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn applies_demo_profile_defaults() {
+        let mut config = KayaConfig::default();
+
+        config.apply_profile(ConfigProfile::Demo);
+
+        assert_eq!(config.default_room, "semana-info");
+        assert!(config.file_transfer.accept_from_unknown);
+        assert!(config.mesh.enabled);
+    }
+
+    #[test]
+    fn applies_paranoid_profile_restrictions() {
+        let mut config = KayaConfig::default();
+
+        config.apply_profile(ConfigProfile::Paranoid);
+
+        assert!(!config.file_transfer.accept_from_unknown);
+        assert!(!config.mesh.allow_relay_for_unknown);
+        assert!(config.mesh.relay_encrypted_only);
+    }
+
+    #[test]
+    fn rejects_zero_timeout_settings() {
+        let mut config = KayaConfig::default();
+        config.timeouts.shutdown_ms = 0;
+
+        assert!(config.validate().is_err());
     }
 
     #[test]

@@ -9,6 +9,14 @@ The parser is registry-based: command metadata defines aliases, validation, usag
 | Command | Example | Description |
 | --- | --- | --- |
 | `/help` | `/help` | Show command summary. |
+| `/about` | `/about` | Show a short product summary. |
+| `/version` | `/version` | Show the CLI version. |
+| `/demo-reset` | `/demo-reset` | Clear demo-only in-memory state and restore the initial room view. |
+| `/demo-peers <n>` | `/demo-peers 4` | Seed demo peers for presentations. |
+| `/demo-message <room> <count>` | `/demo-message semana-info 4` | Seed room traffic for a chosen room. |
+| `/demo-mesh-route` | `/demo-mesh-route` | Simulate a multi-hop secure delivery trace. |
+| `/demo-file-offer` | `/demo-file-offer` | Simulate an encrypted incoming file offer. |
+| `/demo-security-warning` | `/demo-security-warning` | Simulate a trust or fingerprint warning. |
 | `/who` | `/who` | List discovered peers. |
 | `/peers --fingerprints` | `/peers --fingerprints` | List peers with fingerprints and trust status. |
 | `/rooms` | `/rooms` | List rooms known locally. |
@@ -49,6 +57,7 @@ The parser is registry-based: command metadata defines aliases, validation, usag
 Aliases:
 
 - `/h` for `/help`
+- `/ver` for `/version`
 - `/j` for `/join`
 - `/part` for `/leave`
 - `/dm` for `/msg`
@@ -68,6 +77,11 @@ Aliases:
 ## Examples
 
 ```text
+> /about
+> /version
+> /demo-peers 4
+> /demo-message semana-info 4
+> /demo-mesh-route
 > /join semana-info
 > /room alguem recebe?
 > /who
@@ -82,6 +96,8 @@ Aliases:
 > /msg KY-71AF92 teste privado
 > /presence busy
 > /history semana-info
+> /demo-file-offer
+> /demo-security-warning
 > /logs
 > /exit
 ```

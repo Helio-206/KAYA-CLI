@@ -1,8 +1,23 @@
 # KAYA CLI
 
+![Rust](https://img.shields.io/badge/Rust-stable-orange)
+![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
+![Release](https://img.shields.io/badge/release-v0.1.0-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Offline First](https://img.shields.io/badge/offline--first-LAN--native-222222)
+![Terminal UI](https://img.shields.io/badge/terminal--ui-ratatui-5c7cfa)
+
 KAYA CLI is an offline-first, decentralized, terminal-based communication system for local networks. It is not just an "offline chat"; it is ephemeral social infrastructure built from physical proximity.
 
 When multiple devices enter the same LAN, KAYA creates a temporary digital space where operators can discover nearby peers, join rooms, exchange public messages, send DMs, inspect presence, verify fingerprints, establish encrypted DM sessions, exchange files, relay encrypted DMs through an experimental local mesh, and keep working without internet, cloud, or a central server.
+
+## Start Here
+
+- [Pitch](docs/PITCH.md)
+- [Technical Deep Dive](docs/TECHNICAL_DEEP_DIVE.md)
+- [Jury FAQ](docs/JURY_FAQ.md)
+- [Release Notes](RELEASE_NOTES.md)
+- [Public Roadmap](docs/ROADMAP_PUBLIC.md)
 
 ```text
 +-------------------- KAYA --------------------+
@@ -73,11 +88,31 @@ Run:
 cargo run -p kaya-app --bin kaya
 ```
 
+Demo mode:
+
+```bash
+cargo run -p kaya-app --bin kaya -- --demo --profile demo
+```
+
 KAYA stores local config, identity, trust state, peer cache, and basic history in `~/.kaya` by default. Override with:
 
 ```bash
 KAYA_HOME=/tmp/kaya-helio cargo run -p kaya-app --bin kaya
 ```
+
+Or pass an explicit startup directory:
+
+```bash
+cargo run -p kaya-app --bin kaya -- --profile lab --data-dir /tmp/kaya-lab-01
+```
+
+## Startup Flags
+
+- `--demo` starts an isolated presentation profile with a dedicated data directory and generated demo callsign.
+- `--profile <default|demo|lab|paranoid>` applies a runtime profile before startup.
+- `--data-dir <path>` overrides the profile directory explicitly.
+- `--version` prints the CLI version and exits.
+- `--about` prints a short product summary and exits.
 
 Configuration is stored as TOML:
 
@@ -145,6 +180,14 @@ KAYA callsign: Bruno
 ## Commands
 
 - `/help`
+- `/about`
+- `/version`
+- `/demo-reset`
+- `/demo-peers <n>`
+- `/demo-message <room> <count>`
+- `/demo-mesh-route`
+- `/demo-file-offer`
+- `/demo-security-warning`
 - `/who`
 - `/peers --fingerprints`
 - `/rooms`
@@ -182,6 +225,48 @@ KAYA callsign: Bruno
 - `/clear`
 - `/exit`
 
+## Demo Flow
+
+For a controlled presentation:
+
+```bash
+./scripts/run-demo.sh presenter
+```
+
+Inside the TUI:
+
+```text
+> /demo-peers 4
+> /demo-message semana-info 4
+> /demo-mesh-route
+> /demo-file-offer
+> /demo-security-warning
+```
+
+For a lab profile with explicit storage:
+
+```bash
+./scripts/run-local-lab.sh operator-a
+```
+
+## Release Packaging
+
+Build a release archive with:
+
+```bash
+./scripts/package-release.sh
+```
+
+## Presentation Kit
+
+- [Presentation Flow](presentation/README.md)
+- [Demo Script](presentation/DEMO_SCRIPT.md)
+- [Talk Track](presentation/TALK_TRACK.md)
+- [TUI Placeholder](docs/assets/screenshots/tui-main.md)
+- [Secure DM Placeholder](docs/assets/screenshots/secure-dm.md)
+- [Mesh Route Placeholder](docs/assets/screenshots/mesh-route.md)
+- [File Transfer Placeholder](docs/assets/screenshots/file-transfer.md)
+
 ## Quality Gates
 
 ```bash
@@ -201,9 +286,23 @@ cargo test
 - [File Transfer](docs/FILE_TRANSFER.md)
 - [Mesh](docs/MESH.md)
 - [Commands](docs/COMMANDS.md)
+- [Pitch](docs/PITCH.md)
+- [Technical Deep Dive](docs/TECHNICAL_DEEP_DIVE.md)
+- [Jury FAQ](docs/JURY_FAQ.md)
+- [Demo Mode](docs/DEMO_MODE.md)
+- [Limitations](docs/LIMITATIONS.md)
+- [Release](docs/RELEASE.md)
+- [Public Roadmap](docs/ROADMAP_PUBLIC.md)
 - [Testing](docs/TESTING.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Security](docs/SECURITY.md)
+
+## Community
+
+- [Contributing](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security Policy](SECURITY.md)
+- [Release Notes](RELEASE_NOTES.md)
 
 ## Labs
 

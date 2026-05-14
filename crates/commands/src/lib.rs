@@ -10,6 +10,14 @@ pub enum ParsedInput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Help,
+    About,
+    Version,
+    DemoReset,
+    DemoPeers { count: usize },
+    DemoMessage { room: String, count: usize },
+    DemoMeshRoute,
+    DemoFileOffer,
+    DemoSecurityWarning,
     Who { fingerprints: bool },
     Rooms,
     Create { room: String },
@@ -50,6 +58,14 @@ pub enum Command {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandKind {
     Help,
+    About,
+    Version,
+    DemoReset,
+    DemoPeers,
+    DemoMessage,
+    DemoMeshRoute,
+    DemoFileOffer,
+    DemoSecurityWarning,
     Who,
     Rooms,
     Create,
@@ -103,6 +119,62 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         aliases: &["h"],
         usage: "/help",
         description: "show command summary",
+    },
+    CommandSpec {
+        kind: CommandKind::About,
+        name: "about",
+        aliases: &[],
+        usage: "/about",
+        description: "show product summary",
+    },
+    CommandSpec {
+        kind: CommandKind::Version,
+        name: "version",
+        aliases: &["ver"],
+        usage: "/version",
+        description: "show CLI version",
+    },
+    CommandSpec {
+        kind: CommandKind::DemoReset,
+        name: "demo-reset",
+        aliases: &[],
+        usage: "/demo-reset",
+        description: "reset in-memory demo state",
+    },
+    CommandSpec {
+        kind: CommandKind::DemoPeers,
+        name: "demo-peers",
+        aliases: &[],
+        usage: "/demo-peers <n>",
+        description: "seed demo peers",
+    },
+    CommandSpec {
+        kind: CommandKind::DemoMessage,
+        name: "demo-message",
+        aliases: &[],
+        usage: "/demo-message <room> <count>",
+        description: "seed demo room traffic",
+    },
+    CommandSpec {
+        kind: CommandKind::DemoMeshRoute,
+        name: "demo-mesh-route",
+        aliases: &[],
+        usage: "/demo-mesh-route",
+        description: "simulate a mesh route and delivery trace",
+    },
+    CommandSpec {
+        kind: CommandKind::DemoFileOffer,
+        name: "demo-file-offer",
+        aliases: &[],
+        usage: "/demo-file-offer",
+        description: "simulate an incoming encrypted file offer",
+    },
+    CommandSpec {
+        kind: CommandKind::DemoSecurityWarning,
+        name: "demo-security-warning",
+        aliases: &[],
+        usage: "/demo-security-warning",
+        description: "simulate a trust or fingerprint warning",
     },
     CommandSpec {
         kind: CommandKind::Who,
@@ -411,6 +483,30 @@ impl CommandRegistry {
     fn parse_command(&self, spec: &CommandSpec, args: &str) -> Result<Command> {
         match spec.kind {
             CommandKind::Help => Ok(Command::Help),
+            CommandKind::About => Ok(Command::About),
+            CommandKind::Version => Ok(Command::Version),
+            CommandKind::DemoReset => Ok(Command::DemoReset),
+            CommandKind::DemoPeers => Ok(Command::DemoPeers {
+                count: parse_count_arg(args, spec.usage)?,
+            }),
+            CommandKind::DemoMessage => {
+                let mut parts = args.split_whitespace();
+                let room = parts
+                    .next()
+                    .ok_or_else(|| KayaError::InvalidCommand(format!("usage: {}", spec.usage)))?;
+                let count = parts
+                    .next()
+                    .ok_or_else(|| KayaError::InvalidCommand(format!("usage: {}", spec.usage)))?
+                    .parse::<usize>()
+                    .map_err(|_| KayaError::InvalidCommand(format!("usage: {}", spec.usage)))?;
+                Ok(Command::DemoMessage {
+                    room: validate_room_name(room)?,
+                    count: count.max(1),
+                })
+            }
+            CommandKind::DemoMeshRoute => Ok(Command::DemoMeshRoute),
+            CommandKind::DemoFileOffer => Ok(Command::DemoFileOffer),
+            CommandKind::DemoSecurityWarning => Ok(Command::DemoSecurityWarning),
             CommandKind::Who => Ok(Command::Who {
                 fingerprints: args.split_whitespace().any(|arg| arg == "--fingerprints"),
             }),
@@ -527,6 +623,14 @@ fn parse_room_arg(args: &str, usage: &str) -> Result<String> {
     validate_room_name(room)
 }
 
+fn parse_count_arg(args: &str, usage: &str) -> Result<usize> {
+    first_arg(args)
+        .ok_or_else(|| KayaError::InvalidCommand(format!("usage: {usage}")))?
+        .parse::<usize>()
+        .map(|value| value.max(1))
+        .map_err(|_| KayaError::InvalidCommand(format!("usage: {usage}")))
+}
+
 fn parse_msg_command(args: &str, usage: &str) -> Result<Command> {
     let (target, body) = args
         .trim()
@@ -629,6 +733,18 @@ mod tests {
     fn parses_aliases_from_registry() {
         let registry = CommandRegistry::default();
 
+        assert_eq!(
+            registry.parse("/about").unwrap(),
+            ParsedInput::Command(Command::About)
+        );
+        assert_eq!(
+            registry.parse("/ver").unwrap(),
+            ParsedInput::Command(Command::Version)
+        );
+        assert_eq!(
+            registry.parse("/demo-reset").unwrap(),
+            ParsedInput::Command(Command::DemoReset)
+        );
         assert_eq!(
             registry.parse("/dm Ana teste privado agora").unwrap(),
             ParsedInput::Command(Command::Msg {
@@ -734,6 +850,35 @@ mod tests {
         assert_eq!(
             registry.parse("/mesh-clear").unwrap(),
             ParsedInput::Command(Command::MeshClear)
+        );
+    }
+
+    #[test]
+    fn parses_demo_commands() {
+        let registry = CommandRegistry::default();
+
+        assert_eq!(
+            registry.parse("/demo-peers 4").unwrap(),
+            ParsedInput::Command(Command::DemoPeers { count: 4 })
+        );
+        assert_eq!(
+            registry.parse("/demo-message #Semana-Info 3").unwrap(),
+            ParsedInput::Command(Command::DemoMessage {
+                room: "semana-info".into(),
+                count: 3,
+            })
+        );
+        assert_eq!(
+            registry.parse("/demo-mesh-route").unwrap(),
+            ParsedInput::Command(Command::DemoMeshRoute)
+        );
+        assert_eq!(
+            registry.parse("/demo-file-offer").unwrap(),
+            ParsedInput::Command(Command::DemoFileOffer)
+        );
+        assert_eq!(
+            registry.parse("/demo-security-warning").unwrap(),
+            ParsedInput::Command(Command::DemoSecurityWarning)
         );
     }
 }

@@ -661,7 +661,7 @@ impl Runtime {
         }
     }
 
-    fn persist_file_session(&mut self, file_id: &str) {
+    pub(super) fn persist_file_session(&mut self, file_id: &str) {
         let Ok(session) = self.files.session(file_id) else {
             return;
         };
@@ -675,6 +675,35 @@ impl Runtime {
 
     fn security_warning(&self, node_id: Option<String>, message: String) {
         self.publish(KayaEvent::SecurityWarning { node_id, message });
+    }
+
+    pub(super) fn expire_stale_file_transfers(&mut self, cutoff_ms: u64) {
+        let stale_ids: Vec<_> = self
+            .files
+            .sessions()
+            .into_iter()
+            .filter(|session| {
+                matches!(
+                    session.status,
+                    TransferStatus::Offered
+                        | TransferStatus::Accepted
+                        | TransferStatus::Transferring
+                        | TransferStatus::Paused
+                ) && session.updated_at.parse::<u64>().unwrap_or(u64::MAX) < cutoff_ms
+            })
+            .map(|session| session.file_id)
+            .collect();
+
+        for file_id in stale_ids {
+            let reason = format!(
+                "file transfer idle timeout after {}ms",
+                self.timeouts.file_transfer_idle_ms
+            );
+            let _ = self.files.fail(&file_id, reason.clone());
+            self.persist_file_session(&file_id);
+            self.publish(KayaEvent::FileTransferFailed { file_id, reason });
+        }
+        self.sync_files_to_ui();
     }
 }
 

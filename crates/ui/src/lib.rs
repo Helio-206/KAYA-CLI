@@ -4,6 +4,6 @@ mod terminal;
 mod theme;
 
 pub use state::{
-    UiDiagnostics, UiFileTransfer, UiMeshDiagnostics, UiMessage, UiPeer, UiRoom, UiState,
+    UiDiagnostics, UiFileTransfer, UiMeshDiagnostics, UiMessage, UiModal, UiPeer, UiRoom, UiState,
 };
 pub use terminal::TerminalUi;

@@ -243,6 +243,8 @@ impl Runtime {
                     "{from_callsign} offers file: {file_name}, {} bytes, {mode}, fingerprint {fingerprint}. Use /accept-file {file_id} or /reject-file {file_id}",
                     size_bytes
                 ));
+                self.ui_state
+                    .show_file_offer_modal(file_id, file_name, from_callsign, encrypted);
                 self.sync_files_to_ui();
             }
             KayaEvent::FileOfferSent {
@@ -438,6 +440,8 @@ impl Runtime {
             }
             KayaEvent::SecurityWarning { node_id, message } => {
                 self.ui_state.security_warnings += 1;
+                self.ui_state
+                    .show_trust_warning(node_id.clone(), message.clone());
                 let source = node_id.unwrap_or_else(|| "unknown".into());
                 self.ui_state
                     .push_log(format!("security warning {source}: {message}"));
@@ -514,7 +518,13 @@ impl Runtime {
         .await;
     }
 
-    fn apply_room_joined(&mut self, node_id: String, callsign: String, room: String, local: bool) {
+    pub(super) fn apply_room_joined(
+        &mut self,
+        node_id: String,
+        callsign: String,
+        room: String,
+        local: bool,
+    ) {
         if local {
             self.ui_state.current_room = room.clone();
             self.ui_state.space = room.clone();
@@ -728,7 +738,7 @@ impl Runtime {
         }
     }
 
-    fn publish_room_message(&self, message: ChatMessage) {
+    pub(super) fn publish_room_message(&self, message: ChatMessage) {
         let Some(room) = message.room.clone() else {
             return;
         };

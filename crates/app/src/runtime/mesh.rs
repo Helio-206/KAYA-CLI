@@ -81,7 +81,20 @@ impl Runtime {
         if !self.mesh.policy.enabled || !is_valid_node_id(destination_node) {
             return;
         }
+        let now = kaya_shared::now_millis();
+        if self
+            .pending_route_requests
+            .get(destination_node)
+            .map(|requested_at| {
+                now.saturating_sub(*requested_at) < self.timeouts.route_discovery_ms
+            })
+            .unwrap_or(false)
+        {
+            return;
+        }
         let request_id = Uuid::new_v4().to_string();
+        self.pending_route_requests
+            .insert(destination_node.to_string(), now);
         self.publish(KayaEvent::RouteRequestSent {
             destination_node: destination_node.to_string(),
             request_id: request_id.clone(),
@@ -353,6 +366,8 @@ impl Runtime {
         if response.destination_node == self.node_id {
             return;
         }
+        self.pending_route_requests
+            .remove(&response.destination_node);
         let entry = RouteEntry::from_spec(RouteEntrySpec {
             destination_node: response.destination_node.clone(),
             destination_callsign: response.destination_callsign,

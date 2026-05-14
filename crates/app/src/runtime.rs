@@ -1,3 +1,4 @@
+mod demo;
 mod events;
 mod files;
 mod input;
@@ -11,17 +12,23 @@ use kaya_events::{EventBus, KayaEvent};
 use kaya_files::{FileStore, FileTransferConfig, FileTransferManager};
 use kaya_mesh::{MeshPolicy, MeshState};
 use kaya_peer::PeerRegistry;
-use kaya_persistence::{ConfigStore, KayaConfig, Store};
+use kaya_persistence::{ConfigProfile, ConfigStore, KayaConfig, Store, TimeoutSettings};
 use kaya_security::{LocalIdentity, SecureSessionManager, TrustStore};
 use kaya_shared::{PresenceStatus, Result};
 use kaya_transport::{MulticastTransport, PacketDeduplicator};
 use kaya_ui::{TerminalUi, UiState};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 use tokio::time;
 use tracing::info;
+
+#[derive(Debug, Clone)]
+pub(super) struct PendingSecureQueue {
+    pub queued_at_ms: u64,
+    pub messages: Vec<String>,
+}
 
 pub struct Runtime {
     node_id: String,
@@ -40,15 +47,20 @@ pub struct Runtime {
     store: Store,
     trust_store: TrustStore,
     sessions: SecureSessionManager,
-    pending_secure_messages: HashMap<String, Vec<String>>,
+    pending_secure_messages: HashMap<String, PendingSecureQueue>,
+    pending_route_requests: HashMap<String, u64>,
     config_store: ConfigStore,
     config: KayaConfig,
+    profile: ConfigProfile,
+    demo_mode: bool,
+    timeouts: TimeoutSettings,
     commands: CommandRegistry,
     ui_state: UiState,
     diagnostics: RuntimeDiagnostics,
     presence: PresenceStatus,
     dedup: PacketDeduplicator,
     network_task: Option<JoinHandle<()>>,
+    network_shutdown_tx: Option<watch::Sender<bool>>,
 }
 
 pub struct RuntimeInit {
@@ -58,6 +70,8 @@ pub struct RuntimeInit {
     pub store: Store,
     pub config_store: ConfigStore,
     pub config: KayaConfig,
+    pub profile: ConfigProfile,
+    pub demo_mode: bool,
     pub bus: EventBus,
     pub trust_store: TrustStore,
     pub file_store: FileStore,
@@ -74,6 +88,8 @@ impl Runtime {
             store,
             config_store,
             config,
+            profile,
+            demo_mode,
             bus,
             trust_store,
             file_store,
@@ -92,7 +108,11 @@ impl Runtime {
             config.peer_timeout_secs,
             config.packet_max_bytes,
         );
+        let timeouts = config.timeouts.clone();
         let mut ui_state = UiState::new(&node_id, &callsign, rooms.current_room());
+        if demo_mode {
+            ui_state.status = "DEMO".into();
+        }
         ui_state.diagnostics = diagnostics.to_ui();
         ui_state.identity_fingerprint = identity.short_fingerprint();
         let mut files = FileTransferManager::new();
@@ -123,19 +143,27 @@ impl Runtime {
             trust_store,
             sessions: SecureSessionManager::new(identity),
             pending_secure_messages: HashMap::new(),
+            pending_route_requests: HashMap::new(),
             config_store,
             config,
+            profile,
+            demo_mode,
+            timeouts,
             commands: CommandRegistry::default(),
             ui_state,
             diagnostics,
             presence: PresenceStatus::Online,
             dedup: PacketDeduplicator::new(4096),
             network_task: None,
+            network_shutdown_tx: None,
         }
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        self.network_task = Some(self.spawn_network_reader());
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        self.network_shutdown_tx = Some(shutdown_tx);
+        self.network_task =
+            Some(self.spawn_network_reader(shutdown_rx, self.timeouts.network_recv_ms));
         self.bootstrap().await;
 
         let mut ui = TerminalUi::enter()?;
@@ -168,6 +196,7 @@ impl Runtime {
                             destination_node: route.destination_node,
                         });
                     }
+                    self.maintain_timeouts();
                     self.sync_peers_to_ui();
                     self.sync_mesh_to_ui();
                 }
@@ -195,12 +224,71 @@ impl Runtime {
         self.send_packet(self.leave_packet()).await;
         self.config.last_room = Some(self.rooms.current_room().to_string());
         self.config_store.save(&self.config)?;
+        self.store.flush()?;
+
+        if let Some(tx) = self.network_shutdown_tx.take() {
+            let _ = tx.send(true);
+        }
 
         if let Some(task) = self.network_task.take() {
-            task.abort();
+            match time::timeout(Duration::from_millis(self.timeouts.shutdown_ms), task).await {
+                Ok(Ok(())) => {}
+                Ok(Err(err)) if err.is_cancelled() => {}
+                Ok(Err(err)) => {
+                    self.ui_state
+                        .push_log(format!("network task join failed: {err}"));
+                }
+                Err(_) => {
+                    self.ui_state.push_log("network shutdown timed out");
+                }
+            }
         }
 
         info!(node_id = %self.node_id, "kaya node shutdown");
         Ok(())
+    }
+
+    fn maintain_timeouts(&mut self) {
+        let now = kaya_shared::now_millis();
+        let route_deadline = now.saturating_sub(self.timeouts.route_discovery_ms);
+        let expired_routes: Vec<_> = self
+            .pending_route_requests
+            .iter()
+            .filter(|(_, requested_at)| **requested_at < route_deadline)
+            .map(|(destination, _)| destination.clone())
+            .collect();
+        for destination in expired_routes {
+            self.pending_route_requests.remove(&destination);
+            self.publish(KayaEvent::ErrorOccurred {
+                scope: "mesh.route".into(),
+                message: format!("route discovery timed out for {destination}"),
+            });
+        }
+
+        let session_deadline = now.saturating_sub(self.timeouts.secure_session_ms);
+        let expired_pending: Vec<_> = self
+            .pending_secure_messages
+            .iter()
+            .filter(|(_, queue)| queue.queued_at_ms < session_deadline)
+            .map(|(peer, _)| peer.clone())
+            .collect();
+        for peer in expired_pending {
+            self.pending_secure_messages.remove(&peer);
+            let _ = self.sessions.close(&peer);
+            self.publish(KayaEvent::SecurityWarning {
+                node_id: Some(peer.clone()),
+                message: format!("secure session timed out for {peer}"),
+            });
+        }
+
+        for session in self.sessions.expire_before(session_deadline) {
+            self.publish(KayaEvent::SecurityWarning {
+                node_id: Some(session.peer_node_id.clone()),
+                message: format!("secure session expired for {}", session.peer_node_id),
+            });
+        }
+
+        self.expire_stale_file_transfers(now.saturating_sub(self.timeouts.file_transfer_idle_ms));
+        self.sync_security_to_ui();
     }
 }

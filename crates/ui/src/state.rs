@@ -3,6 +3,20 @@ const MAX_LOGS: usize = 200;
 const MAX_COMMAND_HISTORY: usize = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UiModal {
+    FileOffer {
+        file_id: String,
+        file_name: String,
+        from_callsign: String,
+        encrypted: bool,
+    },
+    TrustWarning {
+        node_id: Option<String>,
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UiMessage {
     pub timestamp: String,
     pub room: Option<String>,
@@ -96,6 +110,8 @@ pub struct UiState {
     pub security_warnings: u64,
     pub logs: Vec<String>,
     pub show_logs: bool,
+    pub show_splash: bool,
+    pub modal: Option<UiModal>,
     pub packets_tx: u64,
     pub packets_rx: u64,
     pub bytes_tx: u64,
@@ -135,6 +151,8 @@ impl UiState {
             security_warnings: 0,
             logs: Vec::new(),
             show_logs: true,
+            show_splash: true,
+            modal: None,
             packets_tx: 0,
             packets_rx: 0,
             bytes_tx: 0,
@@ -173,6 +191,33 @@ impl UiState {
     pub fn clear_messages(&mut self) {
         self.messages.clear();
         self.message_scroll = 0;
+    }
+
+    pub fn dismiss_overlays(&mut self) {
+        self.show_splash = false;
+        self.modal = None;
+    }
+
+    pub fn show_file_offer_modal(
+        &mut self,
+        file_id: impl Into<String>,
+        file_name: impl Into<String>,
+        from_callsign: impl Into<String>,
+        encrypted: bool,
+    ) {
+        self.modal = Some(UiModal::FileOffer {
+            file_id: file_id.into(),
+            file_name: file_name.into(),
+            from_callsign: from_callsign.into(),
+            encrypted,
+        });
+    }
+
+    pub fn show_trust_warning(&mut self, node_id: Option<String>, message: impl Into<String>) {
+        self.modal = Some(UiModal::TrustWarning {
+            node_id,
+            message: message.into(),
+        });
     }
 
     pub fn record_submitted_input(&mut self, input: &str) {

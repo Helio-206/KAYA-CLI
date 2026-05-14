@@ -42,6 +42,7 @@ impl TerminalUi {
         match event::read()? {
             Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                 KeyCode::Enter => {
+                    state.dismiss_overlays();
                     let submitted = state.input.trim().to_string();
                     state.record_submitted_input(&submitted);
                     state.input.clear();
@@ -52,36 +53,47 @@ impl TerminalUi {
                     }
                 }
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    state.dismiss_overlays();
                     Ok(Some("/exit".into()))
                 }
                 KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    state.dismiss_overlays();
                     Ok(Some("/clear".into()))
                 }
                 KeyCode::Char(ch) => {
+                    state.dismiss_overlays();
                     state.input.push(ch);
                     Ok(None)
                 }
                 KeyCode::Backspace => {
+                    state.dismiss_overlays();
                     state.input.pop();
                     Ok(None)
                 }
                 KeyCode::Up => {
+                    state.dismiss_overlays();
                     state.history_previous();
                     Ok(None)
                 }
                 KeyCode::Down => {
+                    state.dismiss_overlays();
                     state.history_next();
                     Ok(None)
                 }
                 KeyCode::PageUp => {
+                    state.dismiss_overlays();
                     state.scroll_messages_up();
                     Ok(None)
                 }
                 KeyCode::PageDown => {
+                    state.dismiss_overlays();
                     state.scroll_messages_down();
                     Ok(None)
                 }
-                KeyCode::Esc => Ok(Some("/exit".into())),
+                KeyCode::Esc => {
+                    state.dismiss_overlays();
+                    Ok(Some("/exit".into()))
+                }
                 _ => Ok(None),
             },
             _ => Ok(None),

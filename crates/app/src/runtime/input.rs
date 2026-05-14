@@ -34,6 +34,14 @@ impl Runtime {
     async fn handle_command(&mut self, command: Command) -> Result<bool> {
         match command {
             Command::Help => self.system_message(self.commands.help_text()),
+            Command::About => self.show_about(),
+            Command::Version => self.show_version(),
+            Command::DemoReset => self.demo_reset(),
+            Command::DemoPeers { count } => self.demo_seed_peers(count),
+            Command::DemoMessage { room, count } => self.demo_seed_messages(&room, count),
+            Command::DemoMeshRoute => self.demo_mesh_route(),
+            Command::DemoFileOffer => self.demo_file_offer(),
+            Command::DemoSecurityWarning => self.demo_security_warning(),
             Command::Who { fingerprints } => self.show_who(fingerprints),
             Command::Rooms => {
                 self.show_rooms();
@@ -310,8 +318,11 @@ impl Runtime {
         let request = self.sessions.start_request(&target_node);
         self.pending_secure_messages
             .entry(target_node.clone())
-            .or_default()
-            .push(body);
+            .and_modify(|queue| queue.messages.push(body.clone()))
+            .or_insert_with(|| super::PendingSecureQueue {
+                queued_at_ms: kaya_shared::now_millis(),
+                messages: vec![body],
+            });
         self.send_packet_routed(
             Packet::dm_session_request(
                 self.node_id.clone(),
@@ -332,7 +343,7 @@ impl Runtime {
     }
 
     pub(super) async fn flush_pending_secure_messages(&mut self, peer_node_id: &str) {
-        let Some(messages) = self.pending_secure_messages.remove(peer_node_id) else {
+        let Some(queue) = self.pending_secure_messages.remove(peer_node_id) else {
             return;
         };
         let callsign = self
@@ -340,7 +351,7 @@ impl Runtime {
             .get(peer_node_id)
             .map(|peer| peer.callsign.clone())
             .unwrap_or_else(|| peer_node_id.to_string());
-        for body in messages {
+        for body in queue.messages {
             self.send_encrypted_message(peer_node_id.to_string(), callsign.clone(), body)
                 .await;
         }
@@ -506,7 +517,7 @@ impl Runtime {
 
     fn show_status(&mut self) {
         self.system_message(format!(
-            "node={} room=#{} peers={} routes={} packets_tx={} packets_rx={} events={} secure_sessions={}",
+            "node={} room=#{} peers={} routes={} packets_tx={} packets_rx={} events={} secure_sessions={} profile={} demo={}",
             self.node_id,
             self.rooms.current_room(),
             self.peers.online_count(),
@@ -514,8 +525,18 @@ impl Runtime {
             self.ui_state.packets_tx,
             self.ui_state.packets_rx,
             self.diagnostics.counters.total(),
-            self.sessions.active_count()
+            self.sessions.active_count(),
+            self.profile.as_str(),
+            self.demo_mode
         ));
+    }
+
+    fn show_about(&mut self) {
+        self.system_message(crate::about_text());
+    }
+
+    fn show_version(&mut self) {
+        self.system_message(format!("KAYA CLI {}", env!("CARGO_PKG_VERSION")));
     }
 
     fn show_identity(&mut self) {
