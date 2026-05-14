@@ -19,6 +19,13 @@ The parser is registry-based: command metadata defines aliases, validation, usag
 | `/room <message>` | `/room sistema online` | Send text to the current room. |
 | `/msg <peer> <text>` | `/msg Ana teste privado` | Send a DM by callsign or node id. |
 | `/secure-msg <peer> <text>` | `/secure-msg Ana segredo` | Send an encrypted DM, creating a secure session if needed. |
+| `/send <peer> <path>` | `/send Ana ./docs/PROTOCOL.md` | Offer a file to a peer. |
+| `/accept-file <file_id>` | `/accept-file KF-ABCDEF123456` | Accept an incoming file. |
+| `/reject-file <file_id>` | `/reject-file KF-ABCDEF123456` | Reject an incoming file. |
+| `/files` | `/files` | List transfer state. |
+| `/cancel-file <file_id>` | `/cancel-file KF-ABCDEF123456` | Cancel a transfer. |
+| `/open-folder` | `/open-folder` | Show completed files folder. |
+| `/file-info <file_id>` | `/file-info KF-ABCDEF123456` | Show metadata and progress. |
 | `/presence <state>` | `/presence busy` | Set presence to `online`, `away`, `busy`, or `invisible`. |
 | `/identity` | `/identity` | Show local node id, callsign, fingerprint, and public key summaries. |
 | `/fingerprint` | `/fingerprint` | Show the local public fingerprint. |
@@ -42,6 +49,12 @@ Aliases:
 - `/part` for `/leave`
 - `/dm` for `/msg`
 - `/smsg` for `/secure-msg`
+- `/send-file` for `/send`
+- `/af` for `/accept-file`
+- `/rf` for `/reject-file`
+- `/cf` for `/cancel-file`
+- `/downloads` for `/open-folder`
+- `/fi` for `/file-info`
 - `/p` for `/presence`
 - `/id` for `/identity`
 - `/fp` for `/fingerprint`
@@ -56,6 +69,8 @@ Aliases:
 > /peers --fingerprints
 > /trust Ana
 > /secure-msg Ana segredo local
+> /send Ana ./docs/PROTOCOL.md
+> /files
 > /sessions
 > /msg KY-71AF92 teste privado
 > /presence busy

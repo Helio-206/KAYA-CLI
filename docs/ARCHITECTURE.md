@@ -15,8 +15,9 @@ KAYA is a modular Rust workspace designed around strict separation of responsibi
 9. `peer` updates presence and timeout state.
 10. `rooms` routes room messages and plaintext DMs.
 11. Secure DM packets are routed through `security` session state.
-12. Domain events update the UI projection.
-13. `persistence` records config, known peers, and basic history.
+12. File packets are routed through `files` transfer state.
+13. Domain events update the UI projection.
+14. `persistence` records config, known peers, and basic history.
 
 ## Crates
 
@@ -47,6 +48,10 @@ Tracks room membership, current room, public message history, and direct message
 ### security
 
 Owns persistent local cryptographic identity, Ed25519 packet signing, peer fingerprints, trust store state, X25519 secure DM session setup, HKDF key derivation, and ChaCha20-Poly1305 encrypted DM payload handling.
+
+### files
+
+Owns file metadata, safe filename validation, SHA-256 hashing, chunking, transfer sessions, progress, reassembly, metadata persistence, and completed-file storage.
 
 ### commands
 
@@ -82,6 +87,7 @@ transport -> PacketReceived -> runtime -> peer/rooms -> domain events -> UI proj
 - `DIRECT_MESSAGE`: routes private text to a target node id or callsign.
 - `DM_SESSION_REQUEST` / `DM_SESSION_ACCEPT`: establishes encrypted DM session state.
 - `DIRECT_MESSAGE_ENCRYPTED`: routes encrypted private text after local decryption.
+- `FILE_OFFER` through `FILE_TRANSFER_COMPLETE`: routes offline file transfer state.
 - `LEAVE`: marks a peer offline.
 - `PRESENCE_UPDATE`: updates peer presence.
 - `PING`/`PONG`: reserved for latency measurement.
@@ -109,3 +115,13 @@ Phase 3 keeps public rooms compatible and adds security around identity and DMs:
 - blocked peers are rejected before peer, room, or DM routing;
 - `/secure-msg` negotiates an X25519 session and queues the first message until `DM_SESSION_ACCEPT`;
 - encrypted DMs are decrypted in runtime before being projected as `[SECURE]` chat events.
+
+## Phase 4 Payload Layer
+
+Phase 4 adds file payloads without changing transport topology:
+
+- file offers are explicit and require `/accept-file`;
+- chunks are validated individually and then as a final SHA-256 file;
+- completed files are written under the local KAYA files directory;
+- encrypted chunks reuse an already active secure session;
+- no mesh routing, relay, or file broadcast is introduced.

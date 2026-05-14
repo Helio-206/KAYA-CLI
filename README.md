@@ -2,7 +2,7 @@
 
 KAYA CLI is an offline-first, decentralized, terminal-based communication system for local networks. It is not just an "offline chat"; it is ephemeral social infrastructure built from physical proximity.
 
-When multiple devices enter the same LAN, KAYA creates a temporary digital space where operators can discover nearby peers, join rooms, exchange public messages, send DMs, inspect presence, verify fingerprints, establish encrypted DM sessions, and keep working without internet, cloud, or a central server.
+When multiple devices enter the same LAN, KAYA creates a temporary digital space where operators can discover nearby peers, join rooms, exchange public messages, send DMs, inspect presence, verify fingerprints, establish encrypted DM sessions, exchange files, and keep working without internet, cloud, or a central server.
 
 ```text
 +-------------------- KAYA --------------------+
@@ -38,6 +38,7 @@ kaya-cli/
 │   ├── app/          # runtime, bootstrap, coordination
 │   ├── commands/     # slash-command parser
 │   ├── events/       # internal event bus and counters
+│   ├── files/        # metadata, chunking, hashing, transfer sessions
 │   ├── peer/         # presence, peer cache, timeouts
 │   ├── persistence/  # sled-backed local config/history/cache
 │   ├── protocol/     # packet schema, validation, JSON encode/decode
@@ -90,6 +91,13 @@ packet_max_bytes = 65536
 default_room = "geral"
 last_room = "semana-info"
 log_level = "kaya=info"
+
+[file_transfer]
+enabled = true
+max_file_size_mb = 50
+chunk_size_kb = 64
+accept_from_unknown = true
+download_dir = "~/.kaya/files/completed"
 ```
 
 Identity is stored separately in `~/.kaya/identity.toml`. It contains the persistent node id plus Ed25519 and X25519 key material. Do not share this file.
@@ -120,6 +128,7 @@ Terminal 3:
 KAYA callsign: Bruno
 > /msg Helio teste privado
 > /secure-msg Helio teste privado cifrado
+> /send Helio ./docs/PROTOCOL.md
 ```
 
 ## Commands
@@ -135,6 +144,13 @@ KAYA callsign: Bruno
 - `/room <message>`
 - `/msg <callsign|node-id> <message>`
 - `/secure-msg <callsign|node-id> <message>`
+- `/send <callsign|node-id> <path>`
+- `/accept-file <file_id>`
+- `/reject-file <file_id>`
+- `/files`
+- `/cancel-file <file_id>`
+- `/open-folder`
+- `/file-info <file_id>`
 - `/presence <online|away|busy|invisible>`
 - `/identity`
 - `/fingerprint`
@@ -167,6 +183,7 @@ cargo test
 - [State Management](docs/STATE_MANAGEMENT.md)
 - [UI System](docs/UI_SYSTEM.md)
 - [Protocol](docs/PROTOCOL.md)
+- [File Transfer](docs/FILE_TRANSFER.md)
 - [Commands](docs/COMMANDS.md)
 - [Testing](docs/TESTING.md)
 - [Roadmap](docs/ROADMAP.md)
@@ -186,6 +203,11 @@ cargo test
 - [LAB-11 trust store](labs/LAB-11-trust-store.md)
 - [LAB-12 encrypted DMs](labs/LAB-12-encrypted-dms.md)
 - [LAB-13 blocked peers](labs/LAB-13-blocked-peers.md)
+- [LAB-14 file offer](labs/LAB-14-file-offer.md)
+- [LAB-15 file transfer](labs/LAB-15-file-transfer.md)
+- [LAB-16 encrypted file transfer](labs/LAB-16-encrypted-file-transfer.md)
+- [LAB-17 corrupted chunk](labs/LAB-17-corrupted-chunk.md)
+- [LAB-18 blocked peer file transfer](labs/LAB-18-blocked-peer-file-transfer.md)
 - [Packet loss](labs/packet-loss.md)
 - [Peer timeout](labs/peer-timeout.md)
 - [Malformed packets](labs/malformed-packets.md)

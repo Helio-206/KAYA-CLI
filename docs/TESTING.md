@@ -36,6 +36,13 @@ cargo test
 - X25519 shared-secret equality through secure DM session setup;
 - encrypted DM decrypt success and tamper failure;
 - secure session lifecycle;
+- file metadata validation and safe filename handling;
+- path traversal rejection;
+- file chunk splitting and reassembly;
+- chunk hash and final hash validation;
+- file transfer accept/reject/cancel state transitions;
+- encrypted file chunk decrypt success and tamper failure;
+- transfer metadata persistence;
 - transport packet deduplication;
 - config TOML validation.
 

@@ -51,6 +51,13 @@ impl Runtime {
             Command::SecureMsg { target, body } => {
                 self.send_secure_direct_message(target, body).await
             }
+            Command::SendFile { target, path } => self.send_file_offer(target, path).await,
+            Command::AcceptFile { file_id } => self.accept_file(&file_id).await,
+            Command::RejectFile { file_id } => self.reject_file(&file_id).await,
+            Command::Files => self.show_files(),
+            Command::CancelFile { file_id } => self.cancel_file(&file_id).await,
+            Command::OpenFolder => self.show_files_folder(),
+            Command::FileInfo { file_id } => self.show_file_info(&file_id),
             Command::Presence { status } => self.set_presence(status).await,
             Command::Identity => self.show_identity(),
             Command::Fingerprint => self.system_message(self.identity.fingerprint.clone()),

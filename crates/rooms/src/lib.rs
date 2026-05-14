@@ -242,6 +242,15 @@ impl RoomStore {
             | PacketType::DmSessionRequest
             | PacketType::DmSessionAccept
             | PacketType::DirectMessageEncrypted
+            | PacketType::FileOffer
+            | PacketType::FileAccept
+            | PacketType::FileReject
+            | PacketType::FileChunk
+            | PacketType::FileChunkEncrypted
+            | PacketType::FileChunkAck
+            | PacketType::FileTransferComplete
+            | PacketType::FileTransferCancel
+            | PacketType::FileTransferError
             | PacketType::PresenceUpdate
             | PacketType::Ping
             | PacketType::Pong

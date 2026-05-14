@@ -19,6 +19,13 @@ pub enum Command {
     RoomMessage { body: String },
     Msg { target: String, body: String },
     SecureMsg { target: String, body: String },
+    SendFile { target: String, path: String },
+    AcceptFile { file_id: String },
+    RejectFile { file_id: String },
+    Files,
+    CancelFile { file_id: String },
+    OpenFolder,
+    FileInfo { file_id: String },
     Presence { status: PresenceStatus },
     Identity,
     Fingerprint,
@@ -48,6 +55,13 @@ pub enum CommandKind {
     RoomMessage,
     Msg,
     SecureMsg,
+    SendFile,
+    AcceptFile,
+    RejectFile,
+    Files,
+    CancelFile,
+    OpenFolder,
+    FileInfo,
     Presence,
     Identity,
     Fingerprint,
@@ -144,6 +158,55 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         aliases: &["smsg"],
         usage: "/secure-msg <callsign|node-id> <message>",
         description: "send an encrypted direct message",
+    },
+    CommandSpec {
+        kind: CommandKind::SendFile,
+        name: "send",
+        aliases: &["send-file"],
+        usage: "/send <callsign|node-id> <path>",
+        description: "offer a file to a peer",
+    },
+    CommandSpec {
+        kind: CommandKind::AcceptFile,
+        name: "accept-file",
+        aliases: &["af"],
+        usage: "/accept-file <file-id>",
+        description: "accept an incoming file offer",
+    },
+    CommandSpec {
+        kind: CommandKind::RejectFile,
+        name: "reject-file",
+        aliases: &["rf"],
+        usage: "/reject-file <file-id>",
+        description: "reject an incoming file offer",
+    },
+    CommandSpec {
+        kind: CommandKind::Files,
+        name: "files",
+        aliases: &[],
+        usage: "/files",
+        description: "list file transfers",
+    },
+    CommandSpec {
+        kind: CommandKind::CancelFile,
+        name: "cancel-file",
+        aliases: &["cf"],
+        usage: "/cancel-file <file-id>",
+        description: "cancel a file transfer",
+    },
+    CommandSpec {
+        kind: CommandKind::OpenFolder,
+        name: "open-folder",
+        aliases: &["downloads"],
+        usage: "/open-folder",
+        description: "show the local completed files folder",
+    },
+    CommandSpec {
+        kind: CommandKind::FileInfo,
+        name: "file-info",
+        aliases: &["fi"],
+        usage: "/file-info <file-id>",
+        description: "show file transfer metadata and state",
     },
     CommandSpec {
         kind: CommandKind::Presence,
@@ -337,6 +400,21 @@ impl CommandRegistry {
             }
             CommandKind::Msg => parse_msg_command(args, spec.usage),
             CommandKind::SecureMsg => parse_secure_msg_command(args, spec.usage),
+            CommandKind::SendFile => parse_send_file_command(args, spec.usage),
+            CommandKind::AcceptFile => Ok(Command::AcceptFile {
+                file_id: parse_peer_arg(args, spec.usage)?.to_string(),
+            }),
+            CommandKind::RejectFile => Ok(Command::RejectFile {
+                file_id: parse_peer_arg(args, spec.usage)?.to_string(),
+            }),
+            CommandKind::Files => Ok(Command::Files),
+            CommandKind::CancelFile => Ok(Command::CancelFile {
+                file_id: parse_peer_arg(args, spec.usage)?.to_string(),
+            }),
+            CommandKind::OpenFolder => Ok(Command::OpenFolder),
+            CommandKind::FileInfo => Ok(Command::FileInfo {
+                file_id: parse_peer_arg(args, spec.usage)?.to_string(),
+            }),
             CommandKind::Presence => {
                 let Some(status) = first_arg(args).and_then(PresenceStatus::parse) else {
                     return Err(KayaError::InvalidCommand(format!("usage: {}", spec.usage)));
@@ -430,6 +508,14 @@ fn parse_secure_msg_command(args: &str, usage: &str) -> Result<Command> {
     Ok(Command::SecureMsg {
         target: target.to_string(),
         body: body.to_string(),
+    })
+}
+
+fn parse_send_file_command(args: &str, usage: &str) -> Result<Command> {
+    let (target, path) = split_target_and_body(args, usage)?;
+    Ok(Command::SendFile {
+        target: target.to_string(),
+        path: path.to_string(),
     })
 }
 
@@ -531,6 +617,7 @@ mod tests {
         assert!(help.contains("/join <room>"));
         assert!(help.contains("/presence <online|away|busy|invisible>"));
         assert!(help.contains("/secure-msg <callsign|node-id> <message>"));
+        assert!(help.contains("/send <callsign|node-id> <path>"));
     }
 
     #[test]
@@ -563,6 +650,23 @@ mod tests {
         assert_eq!(
             registry.parse("/close-session Ana").unwrap(),
             ParsedInput::Command(Command::CloseSession { peer: "Ana".into() })
+        );
+        assert_eq!(
+            registry.parse("/send Ana ./docs/PROTOCOL.md").unwrap(),
+            ParsedInput::Command(Command::SendFile {
+                target: "Ana".into(),
+                path: "./docs/PROTOCOL.md".into()
+            })
+        );
+        assert_eq!(
+            registry.parse("/accept-file KF-ABCDEF123456").unwrap(),
+            ParsedInput::Command(Command::AcceptFile {
+                file_id: "KF-ABCDEF123456".into()
+            })
+        );
+        assert_eq!(
+            registry.parse("/files").unwrap(),
+            ParsedInput::Command(Command::Files)
         );
     }
 }

@@ -17,6 +17,7 @@ The TUI lives in `crates/ui` and uses ratatui with crossterm.
 - Peer rows include short fingerprints and trust state when available.
 - Encrypted DMs render with a `[SECURE]` marker.
 - The technical panel shows trusted peers, blocked peers, active secure sessions, and security warning count.
+- The right-side `FILES` panel shows active transfers, progress percentage, state, encrypted/unencrypted mode, signed state, and trust state.
 
 ## Controls
 

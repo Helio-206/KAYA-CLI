@@ -578,6 +578,7 @@ version = "0.1.0"
 dependencies = [
  "kaya-commands",
  "kaya-events",
+ "kaya-files",
  "kaya-peer",
  "kaya-persistence",
  "kaya-protocol",
@@ -586,6 +587,7 @@ dependencies = [
  "kaya-shared",
  "kaya-transport",
  "kaya-ui",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -606,6 +608,18 @@ dependencies = [
  "kaya-shared",
  "serde",
  "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "kaya-files"
+version = "0.1.0"
+dependencies = [
+ "kaya-shared",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
  "uuid",
 ]
 

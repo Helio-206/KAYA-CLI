@@ -80,6 +80,19 @@ Tracks:
 - in-memory secure DM sessions;
 - pending secure messages waiting for handshake acceptance.
 
+## File Transfer State
+
+`crates/files`
+
+Tracks:
+
+- incoming and outgoing transfer sessions;
+- metadata and completed file paths;
+- chunk buffers for reassembly;
+- progress counters;
+- final hash verification status;
+- persisted transfer records under `~/.kaya/files/metadata`.
+
 ## Event-Driven Updates
 
 State mutation happens inside the runtime after validated events:
@@ -90,6 +103,7 @@ PacketReceived
   -> signature/trust inspection
   -> peer registry
   -> room or secure-session routing
+  -> file-transfer routing
   -> domain events
   -> UI projection
 ```

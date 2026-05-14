@@ -268,6 +268,15 @@ pub fn packet_requires_signature_validation(packet_type: PacketType) -> bool {
             | PacketType::DmSessionRequest
             | PacketType::DmSessionAccept
             | PacketType::DirectMessageEncrypted
+            | PacketType::FileOffer
+            | PacketType::FileAccept
+            | PacketType::FileReject
+            | PacketType::FileChunk
+            | PacketType::FileChunkEncrypted
+            | PacketType::FileChunkAck
+            | PacketType::FileTransferComplete
+            | PacketType::FileTransferCancel
+            | PacketType::FileTransferError
     )
 }
 
@@ -650,16 +659,35 @@ impl SecureSessionManager {
     }
 
     pub fn encrypt(&mut self, peer_node_id: &str, body: &str) -> Result<EncryptedPayload> {
+        self.encrypt_bytes_with_context(peer_node_id, body.as_bytes(), "kaya-dm-v1")
+    }
+
+    pub fn encrypt_file_chunk(
+        &mut self,
+        peer_node_id: &str,
+        bytes: &[u8],
+    ) -> Result<EncryptedPayload> {
+        self.encrypt_bytes_with_context(peer_node_id, bytes, "kaya-file-transfer-v1")
+    }
+
+    fn encrypt_bytes_with_context(
+        &mut self,
+        peer_node_id: &str,
+        bytes: &[u8],
+        context: &str,
+    ) -> Result<EncryptedPayload> {
+        let sender_fingerprint = self.identity.fingerprint.clone();
         let session = self.active_session_mut(peer_node_id)?;
         let key = session
             .key
             .ok_or_else(|| KayaError::Security("secure session has no key".into()))?;
+        let key = derive_context_key(&key, &session.session_id, context)?;
         let mut nonce = [0_u8; NONCE_BYTES];
         OsRng.fill_bytes(&mut nonce);
         let cipher = ChaCha20Poly1305::new((&key).into());
         let ciphertext = cipher
-            .encrypt(Nonce::from_slice(&nonce), body.as_bytes())
-            .map_err(|err| KayaError::Security(format!("dm encrypt failed: {err}")))?;
+            .encrypt(Nonce::from_slice(&nonce), bytes)
+            .map_err(|err| KayaError::Security(format!("payload encrypt failed: {err}")))?;
 
         session.message_counter += 1;
         session.last_used_at = now_millis().to_string();
@@ -667,7 +695,7 @@ impl SecureSessionManager {
             session_id: session.session_id.clone(),
             nonce: encode_hex(&nonce),
             ciphertext: encode_hex(&ciphertext),
-            sender_fingerprint: self.identity.fingerprint.clone(),
+            sender_fingerprint,
             timestamp: now_millis().to_string(),
         })
     }
@@ -680,6 +708,7 @@ impl SecureSessionManager {
         let key = session
             .key
             .ok_or_else(|| KayaError::Security("secure session has no key".into()))?;
+        let key = derive_context_key(&key, &session.session_id, "kaya-dm-v1")?;
         let nonce = decode_fixed::<NONCE_BYTES>(&payload.nonce)?;
         let ciphertext = decode_hex(&payload.ciphertext)?;
         let cipher = ChaCha20Poly1305::new((&key).into());
@@ -690,6 +719,33 @@ impl SecureSessionManager {
         session.message_counter += 1;
         session.last_used_at = now_millis().to_string();
         String::from_utf8(plaintext).map_err(|err| KayaError::Security(err.to_string()))
+    }
+
+    pub fn decrypt_file_chunk(
+        &mut self,
+        peer_node_id: &str,
+        payload: &EncryptedPayload,
+    ) -> Result<Vec<u8>> {
+        let session = self.active_session_mut(peer_node_id)?;
+        if session.session_id != payload.session_id {
+            return Err(KayaError::Security(
+                "encrypted file chunk session mismatch".into(),
+            ));
+        }
+        let key = session
+            .key
+            .ok_or_else(|| KayaError::Security("secure session has no key".into()))?;
+        let key = derive_context_key(&key, &session.session_id, "kaya-file-transfer-v1")?;
+        let nonce = decode_fixed::<NONCE_BYTES>(&payload.nonce)?;
+        let ciphertext = decode_hex(&payload.ciphertext)?;
+        let cipher = ChaCha20Poly1305::new((&key).into());
+        let plaintext = cipher
+            .decrypt(Nonce::from_slice(&nonce), ciphertext.as_ref())
+            .map_err(|err| KayaError::Security(format!("file chunk decrypt failed: {err}")))?;
+
+        session.message_counter += 1;
+        session.last_used_at = now_millis().to_string();
+        Ok(plaintext)
     }
 
     pub fn views(&self) -> Vec<SecureSessionView> {
@@ -733,6 +789,14 @@ impl SecureSessionManager {
             .map_err(|err| KayaError::Security(format!("session key derivation failed: {err}")))?;
         Ok(key)
     }
+}
+
+fn derive_context_key(base_key: &[u8; 32], session_id: &str, context: &str) -> Result<[u8; 32]> {
+    let hkdf = Hkdf::<Sha256>::new(None, base_key);
+    let mut key = [0_u8; 32];
+    hkdf.expand(format!("{context}:{session_id}").as_bytes(), &mut key)
+        .map_err(|err| KayaError::Security(format!("context key derivation failed: {err}")))?;
+    Ok(key)
 }
 
 pub fn session_request_from_packet(packet: &Packet) -> Result<SessionHandshake> {

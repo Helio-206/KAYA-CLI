@@ -62,6 +62,15 @@ pub enum PacketType {
     DmSessionRequest,
     DmSessionAccept,
     DirectMessageEncrypted,
+    FileOffer,
+    FileAccept,
+    FileReject,
+    FileChunk,
+    FileChunkEncrypted,
+    FileChunkAck,
+    FileTransferComplete,
+    FileTransferCancel,
+    FileTransferError,
     PresenceUpdate,
     Ping,
     Pong,
@@ -90,6 +99,45 @@ pub struct Packet {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EncryptedDirectMessagePayload {
+    pub session_id: String,
+    pub nonce: String,
+    pub ciphertext: String,
+    pub sender_fingerprint: String,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileOfferPayload {
+    pub file_id: String,
+    pub file_name: String,
+    pub file_size: u64,
+    pub mime_type: Option<String>,
+    pub sha256: String,
+    pub chunk_size: usize,
+    pub total_chunks: u32,
+    pub sender_node_id: String,
+    pub sender_callsign: String,
+    pub created_at: String,
+    pub dangerous_extension: bool,
+    pub encrypted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileChunkPayload {
+    pub file_id: String,
+    pub chunk_index: u32,
+    pub total_chunks: u32,
+    pub chunk_hash: String,
+    pub payload: String,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileEncryptedChunkPayload {
+    pub file_id: String,
+    pub chunk_index: u32,
+    pub total_chunks: u32,
+    pub chunk_hash: String,
     pub session_id: String,
     pub nonce: String,
     pub ciphertext: String,
@@ -359,6 +407,176 @@ impl Packet {
         )
     }
 
+    pub fn file_offer(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        payload: FileOfferPayload,
+    ) -> Self {
+        Self::new(
+            PacketType::FileOffer,
+            node_id,
+            callsign,
+            None,
+            Some(target_node.into()),
+            json!(payload),
+        )
+    }
+
+    pub fn file_accept(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        file_id: impl Into<String>,
+    ) -> Self {
+        Self::file_control(
+            PacketType::FileAccept,
+            node_id,
+            callsign,
+            target_node,
+            file_id,
+            None,
+        )
+    }
+
+    pub fn file_reject(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        file_id: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::file_control(
+            PacketType::FileReject,
+            node_id,
+            callsign,
+            target_node,
+            file_id,
+            Some(reason.into()),
+        )
+    }
+
+    pub fn file_chunk(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        payload: FileChunkPayload,
+    ) -> Self {
+        Self::new(
+            PacketType::FileChunk,
+            node_id,
+            callsign,
+            None,
+            Some(target_node.into()),
+            json!(payload),
+        )
+    }
+
+    pub fn file_chunk_encrypted(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        payload: FileEncryptedChunkPayload,
+    ) -> Self {
+        Self::new(
+            PacketType::FileChunkEncrypted,
+            node_id,
+            callsign,
+            None,
+            Some(target_node.into()),
+            json!(payload),
+        )
+    }
+
+    pub fn file_chunk_ack(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        file_id: impl Into<String>,
+        chunk_index: u32,
+    ) -> Self {
+        Self::new(
+            PacketType::FileChunkAck,
+            node_id,
+            callsign,
+            None,
+            Some(target_node.into()),
+            json!({ "file_id": file_id.into(), "chunk_index": chunk_index }),
+        )
+    }
+
+    pub fn file_transfer_complete(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        file_id: impl Into<String>,
+    ) -> Self {
+        Self::file_control(
+            PacketType::FileTransferComplete,
+            node_id,
+            callsign,
+            target_node,
+            file_id,
+            None,
+        )
+    }
+
+    pub fn file_transfer_cancel(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        file_id: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::file_control(
+            PacketType::FileTransferCancel,
+            node_id,
+            callsign,
+            target_node,
+            file_id,
+            Some(reason.into()),
+        )
+    }
+
+    pub fn file_transfer_error(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        file_id: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::file_control(
+            PacketType::FileTransferError,
+            node_id,
+            callsign,
+            target_node,
+            file_id,
+            Some(reason.into()),
+        )
+    }
+
+    fn file_control(
+        packet_type: PacketType,
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        file_id: impl Into<String>,
+        reason: Option<String>,
+    ) -> Self {
+        let mut payload = json!({ "file_id": file_id.into() });
+        if let Some(reason) = reason {
+            payload["reason"] = Value::String(reason);
+        }
+        Self::new(
+            packet_type,
+            node_id,
+            callsign,
+            None,
+            Some(target_node.into()),
+            payload,
+        )
+    }
+
     pub fn presence_update(
         node_id: impl Into<String>,
         callsign: impl Into<String>,
@@ -538,7 +756,16 @@ impl Packet {
             }
             PacketType::DmSessionRequest
             | PacketType::DmSessionAccept
-            | PacketType::DirectMessageEncrypted => {
+            | PacketType::DirectMessageEncrypted
+            | PacketType::FileOffer
+            | PacketType::FileAccept
+            | PacketType::FileReject
+            | PacketType::FileChunk
+            | PacketType::FileChunkEncrypted
+            | PacketType::FileChunkAck
+            | PacketType::FileTransferComplete
+            | PacketType::FileTransferCancel
+            | PacketType::FileTransferError => {
                 if self
                     .target_node
                     .as_deref()
@@ -597,6 +824,83 @@ impl Packet {
                     }
                 }
             }
+            PacketType::FileOffer => {
+                for field in [
+                    "file_id",
+                    "file_name",
+                    "sha256",
+                    "sender_node_id",
+                    "sender_callsign",
+                    "created_at",
+                ] {
+                    if !payload_has_str(&self.payload, field) {
+                        return Err(ProtocolError::MissingField {
+                            packet_type: self.packet_type,
+                            field,
+                        });
+                    }
+                }
+                for field in ["file_size", "chunk_size", "total_chunks"] {
+                    if !payload_has_number(&self.payload, field) {
+                        return Err(ProtocolError::MissingField {
+                            packet_type: self.packet_type,
+                            field,
+                        });
+                    }
+                }
+            }
+            PacketType::FileChunk => {
+                for field in ["file_id", "chunk_hash", "payload", "timestamp"] {
+                    if !payload_has_str(&self.payload, field) {
+                        return Err(ProtocolError::MissingField {
+                            packet_type: self.packet_type,
+                            field,
+                        });
+                    }
+                }
+                for field in ["chunk_index", "total_chunks"] {
+                    if !payload_has_number(&self.payload, field) {
+                        return Err(ProtocolError::MissingField {
+                            packet_type: self.packet_type,
+                            field,
+                        });
+                    }
+                }
+            }
+            PacketType::FileChunkEncrypted => {
+                for field in [
+                    "file_id",
+                    "chunk_hash",
+                    "session_id",
+                    "nonce",
+                    "ciphertext",
+                    "sender_fingerprint",
+                    "timestamp",
+                ] {
+                    if !payload_has_str(&self.payload, field) {
+                        return Err(ProtocolError::MissingField {
+                            packet_type: self.packet_type,
+                            field,
+                        });
+                    }
+                }
+                for field in ["chunk_index", "total_chunks"] {
+                    if !payload_has_number(&self.payload, field) {
+                        return Err(ProtocolError::MissingField {
+                            packet_type: self.packet_type,
+                            field,
+                        });
+                    }
+                }
+            }
+            PacketType::FileAccept
+            | PacketType::FileReject
+            | PacketType::FileChunkAck
+            | PacketType::FileTransferComplete
+            | PacketType::FileTransferCancel
+            | PacketType::FileTransferError => {
+                require_payload_str(&self.payload, self.packet_type, "file_id")?;
+            }
             _ => {}
         }
 
@@ -610,6 +914,22 @@ fn payload_has_str(payload: &Value, field: &'static str) -> bool {
         .and_then(Value::as_str)
         .map(|value| !value.trim().is_empty())
         .unwrap_or(false)
+}
+
+fn require_payload_str(
+    payload: &Value,
+    packet_type: PacketType,
+    field: &'static str,
+) -> ProtocolResult<()> {
+    if payload_has_str(payload, field) {
+        Ok(())
+    } else {
+        Err(ProtocolError::MissingField { packet_type, field })
+    }
+}
+
+fn payload_has_number(payload: &Value, field: &'static str) -> bool {
+    payload.get(field).and_then(Value::as_u64).is_some()
 }
 
 pub fn encode(packet: &Packet) -> ProtocolResult<Vec<u8>> {
@@ -752,6 +1072,57 @@ mod tests {
                     timestamp: "123".into(),
                 },
             ),
+            Packet::file_offer(
+                "KY-71AF92",
+                "Helio",
+                "KY-AAAAAA",
+                FileOfferPayload {
+                    file_id: "KF-ABCDEF123456".into(),
+                    file_name: "report.pdf".into(),
+                    file_size: 42,
+                    mime_type: Some("application/pdf".into()),
+                    sha256: "a".repeat(64),
+                    chunk_size: 65536,
+                    total_chunks: 1,
+                    sender_node_id: "KY-71AF92".into(),
+                    sender_callsign: "Helio".into(),
+                    created_at: "123".into(),
+                    dangerous_extension: false,
+                    encrypted: false,
+                },
+            ),
+            Packet::file_chunk(
+                "KY-71AF92",
+                "Helio",
+                "KY-AAAAAA",
+                FileChunkPayload {
+                    file_id: "KF-ABCDEF123456".into(),
+                    chunk_index: 0,
+                    total_chunks: 1,
+                    chunk_hash: "a".repeat(64),
+                    payload: "abcd".into(),
+                    timestamp: "123".into(),
+                },
+            ),
+            Packet::file_chunk_encrypted(
+                "KY-71AF92",
+                "Helio",
+                "KY-AAAAAA",
+                FileEncryptedChunkPayload {
+                    file_id: "KF-ABCDEF123456".into(),
+                    chunk_index: 0,
+                    total_chunks: 1,
+                    chunk_hash: "a".repeat(64),
+                    session_id: "session-1".into(),
+                    nonce: "nonce".into(),
+                    ciphertext: "ciphertext".into(),
+                    sender_fingerprint: "KAYA-FP: 8A19-FC90-B2D1".into(),
+                    timestamp: "123".into(),
+                },
+            ),
+            Packet::file_accept("KY-AAAAAA", "Ana", "KY-71AF92", "KF-ABCDEF123456"),
+            Packet::file_chunk_ack("KY-AAAAAA", "Ana", "KY-71AF92", "KF-ABCDEF123456", 0),
+            Packet::file_transfer_complete("KY-AAAAAA", "Ana", "KY-71AF92", "KF-ABCDEF123456"),
         ];
 
         for packet in packets {

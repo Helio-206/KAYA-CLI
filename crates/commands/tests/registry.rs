@@ -9,6 +9,7 @@ fn registry_lists_every_command_usage() {
     assert!(usages.contains(&"/join <room>"));
     assert!(usages.contains(&"/msg <callsign|node-id> <message>"));
     assert!(usages.contains(&"/secure-msg <callsign|node-id> <message>"));
+    assert!(usages.contains(&"/send <callsign|node-id> <path>"));
     assert!(usages.contains(&"/trust <peer>"));
 }
 
@@ -19,6 +20,7 @@ fn registry_validates_required_arguments() {
     assert!(registry.parse("/join").is_err());
     assert!(registry.parse("/msg Ana").is_err());
     assert!(registry.parse("/secure-msg Ana").is_err());
+    assert!(registry.parse("/send Ana").is_err());
     assert!(registry.parse("/block").is_err());
 }
 
@@ -30,6 +32,25 @@ fn registry_parses_room_alias_and_normalizes() {
         registry.parse("/j #Semana-Info").unwrap(),
         ParsedInput::Command(Command::Join {
             room: "semana-info".into()
+        })
+    );
+}
+
+#[test]
+fn registry_parses_file_commands() {
+    let registry = CommandRegistry::default();
+
+    assert_eq!(
+        registry.parse("/send Ana ./docs/PROTOCOL.md").unwrap(),
+        ParsedInput::Command(Command::SendFile {
+            target: "Ana".into(),
+            path: "./docs/PROTOCOL.md".into()
+        })
+    );
+    assert_eq!(
+        registry.parse("/reject-file KF-ABCDEF123456").unwrap(),
+        ParsedInput::Command(Command::RejectFile {
+            file_id: "KF-ABCDEF123456".into()
         })
     );
 }

@@ -49,6 +49,15 @@ Signed packets are verified over a canonical JSON representation of the packet w
 | `DM_SESSION_REQUEST` | `target_node`, `payload.session_id`, `payload.x25519_public_key`, `payload.fingerprint` | Starts an encrypted DM session. |
 | `DM_SESSION_ACCEPT` | `target_node`, `payload.session_id`, `payload.x25519_public_key`, `payload.fingerprint` | Accepts an encrypted DM session. |
 | `DIRECT_MESSAGE_ENCRYPTED` | `target_node`, encrypted payload fields | Sends a ChaCha20-Poly1305 encrypted DM. |
+| `FILE_OFFER` | `target_node`, file metadata payload | Offers a file transfer. |
+| `FILE_ACCEPT` | `target_node`, `payload.file_id` | Accepts a file offer. |
+| `FILE_REJECT` | `target_node`, `payload.file_id` | Rejects a file offer. |
+| `FILE_CHUNK` | `target_node`, chunk payload | Sends an unencrypted file chunk. |
+| `FILE_CHUNK_ENCRYPTED` | `target_node`, encrypted chunk payload | Sends an encrypted file chunk. |
+| `FILE_CHUNK_ACK` | `target_node`, `payload.file_id`, `payload.chunk_index` | Acknowledges a chunk. |
+| `FILE_TRANSFER_COMPLETE` | `target_node`, `payload.file_id` | Announces transfer completion. |
+| `FILE_TRANSFER_CANCEL` | `target_node`, `payload.file_id` | Cancels a transfer. |
+| `FILE_TRANSFER_ERROR` | `target_node`, `payload.file_id`, `payload.reason` | Reports a transfer failure. |
 | `PRESENCE_UPDATE` | `room`, `payload.presence` | Announces `online`, `away`, `busy`, or `invisible`. |
 | `PING` | `target_node` | Reserved for latency measurement. |
 | `PONG` | `target_node` | Reply to ping/hello. |
@@ -102,6 +111,29 @@ If `public_key`/`signature` is malformed or does not verify, the packet is rejec
 ```
 
 Session setup uses X25519 public keys exchanged in `DM_SESSION_REQUEST` and `DM_SESSION_ACCEPT`. Both sides derive a symmetric key with HKDF-SHA256 and encrypt DMs with ChaCha20-Poly1305.
+
+## File Transfer Payloads
+
+`FILE_OFFER`:
+
+```json
+{
+  "file_id": "KF-ABCDEF123456",
+  "file_name": "report.pdf",
+  "file_size": 2516582,
+  "mime_type": "application/pdf",
+  "sha256": "...",
+  "chunk_size": 65536,
+  "total_chunks": 39,
+  "sender_node_id": "KY-71AF92",
+  "sender_callsign": "Helio",
+  "created_at": "1778673210123",
+  "dangerous_extension": false,
+  "encrypted": true
+}
+```
+
+`FILE_CHUNK` stores the chunk payload as hex. `FILE_CHUNK_ENCRYPTED` stores `session_id`, `nonce`, `ciphertext`, `sender_fingerprint`, and the plaintext chunk hash so the receiver can verify the decrypted chunk.
 
 ## Validation
 

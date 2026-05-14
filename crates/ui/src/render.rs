@@ -172,9 +172,10 @@ fn draw_peers(frame: &mut Frame, area: Rect, state: &UiState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(38),
-            Constraint::Percentage(32),
-            Constraint::Percentage(30),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
         ])
         .split(area);
 
@@ -236,6 +237,31 @@ fn draw_peers(frame: &mut Frame, area: Rect, state: &UiState) {
         })
         .collect();
     frame.render_widget(List::new(dm_items).block(kaya_block(" DMS ")), chunks[2]);
+
+    let file_items: Vec<ListItem> = state
+        .files
+        .iter()
+        .take(chunks[3].height.saturating_sub(2) as usize)
+        .map(|file| {
+            let trust = if file.trusted { "trusted" } else { "unknown" };
+            let signed = if file.signed { "signed" } else { "unsigned" };
+            ListItem::new(Line::from(vec![
+                Span::styled(file.file_name.clone(), value_style()),
+                Span::raw(" "),
+                Span::styled(format!("{:.0}%", file.percent), cyan_style()),
+                Span::raw(" "),
+                Span::styled(file.status.clone(), muted_style()),
+                Span::raw(" "),
+                Span::styled(file.security.clone(), muted_style()),
+                Span::raw(" "),
+                Span::styled(format!("{trust}/{signed}"), muted_style()),
+            ]))
+        })
+        .collect();
+    frame.render_widget(
+        List::new(file_items).block(kaya_block(" FILES ")),
+        chunks[3],
+    );
 }
 
 fn draw_network(frame: &mut Frame, area: Rect, state: &UiState) {

@@ -221,6 +221,116 @@ impl Runtime {
                 self.system_message(format!("secure session closed with {peer_node_id}{suffix}"));
                 self.sync_security_to_ui();
             }
+            KayaEvent::FileOfferReceived {
+                file_id,
+                file_name,
+                from_node,
+                from_callsign,
+                size_bytes,
+                encrypted,
+            } => {
+                let fingerprint = self
+                    .trust_store
+                    .get(&from_node)
+                    .map(|peer| peer.fingerprint.clone())
+                    .unwrap_or_else(|| "--".into());
+                let mode = if encrypted {
+                    "encrypted"
+                } else {
+                    "unencrypted"
+                };
+                self.system_message(format!(
+                    "{from_callsign} offers file: {file_name}, {} bytes, {mode}, fingerprint {fingerprint}. Use /accept-file {file_id} or /reject-file {file_id}",
+                    size_bytes
+                ));
+                self.sync_files_to_ui();
+            }
+            KayaEvent::FileOfferSent {
+                file_id,
+                file_name,
+                target_callsign,
+                encrypted,
+                ..
+            } => {
+                let mode = if encrypted {
+                    "encrypted"
+                } else {
+                    "unencrypted"
+                };
+                self.system_message(format!(
+                    "offered file {file_name} to {target_callsign}: {file_id} [{mode}]"
+                ));
+                self.sync_files_to_ui();
+            }
+            KayaEvent::FileAccepted {
+                file_id, callsign, ..
+            } => {
+                self.ui_state
+                    .push_log(format!("file accepted {file_id} by {callsign}"));
+                self.sync_files_to_ui();
+            }
+            KayaEvent::FileRejected {
+                file_id,
+                callsign,
+                reason,
+                ..
+            } => {
+                self.system_message(format!(
+                    "file {file_id} rejected by {callsign}: {}",
+                    reason.unwrap_or_else(|| "no reason".into())
+                ));
+                self.sync_files_to_ui();
+            }
+            KayaEvent::FileChunkReceived {
+                file_id,
+                chunk_index,
+                total_chunks,
+            } => {
+                self.ui_state.push_log(format!(
+                    "file chunk {file_id} {}/{}",
+                    chunk_index + 1,
+                    total_chunks
+                ));
+                self.sync_files_to_ui();
+            }
+            KayaEvent::FileChunkAcked {
+                file_id,
+                chunk_index,
+            } => {
+                self.ui_state
+                    .push_log(format!("file chunk ack {file_id} {chunk_index}"));
+            }
+            KayaEvent::FileTransferProgress { file_id, .. } => {
+                self.sync_files_to_ui();
+                self.ui_state.push_log(format!("file progress {file_id}"));
+            }
+            KayaEvent::FileTransferCompleted { file_id, path } => {
+                self.system_message(format!(
+                    "file transfer completed {file_id} {}",
+                    path.unwrap_or_else(|| "--".into())
+                ));
+                self.sync_files_to_ui();
+            }
+            KayaEvent::FileTransferCancelled { file_id, reason } => {
+                self.system_message(format!(
+                    "file transfer cancelled {file_id}: {}",
+                    reason.unwrap_or_else(|| "no reason".into())
+                ));
+                self.sync_files_to_ui();
+            }
+            KayaEvent::FileTransferFailed { file_id, reason } => {
+                self.system_message(format!("file transfer failed {file_id}: {reason}"));
+                self.sync_files_to_ui();
+            }
+            KayaEvent::FileHashVerified { file_id, sha256 } => {
+                self.ui_state
+                    .push_log(format!("file hash verified {file_id} {sha256}"));
+                self.sync_files_to_ui();
+            }
+            KayaEvent::FileHashMismatch { file_id } => {
+                self.system_message(format!("file hash mismatch {file_id}"));
+                self.sync_files_to_ui();
+            }
             KayaEvent::SecurityWarning { node_id, message } => {
                 self.ui_state.security_warnings += 1;
                 let source = node_id.unwrap_or_else(|| "unknown".into());
@@ -281,6 +391,9 @@ impl Runtime {
             self.remember_peer(&packet);
             self.sync_peers_to_ui();
             if self.route_security_packet(&packet).await {
+                return;
+            }
+            if self.route_file_packet(&packet).await {
                 return;
             }
             self.route_packet(&packet).await;
@@ -575,7 +688,7 @@ impl Runtime {
         }
     }
 
-    fn packet_targets_local_node(&self, packet: &Packet) -> bool {
+    pub(super) fn packet_targets_local_node(&self, packet: &Packet) -> bool {
         packet.target_node.as_deref() == Some(self.node_id.as_str())
             || packet
                 .target_node
@@ -584,7 +697,7 @@ impl Runtime {
                 .unwrap_or(false)
     }
 
-    fn packet_fingerprint_matches(&self, node_id: &str, fingerprint: &str) -> bool {
+    pub(super) fn packet_fingerprint_matches(&self, node_id: &str, fingerprint: &str) -> bool {
         let matches = self
             .trust_store
             .get(node_id)
@@ -606,5 +719,6 @@ fn secure_packet_requires_signature(packet_type: PacketType) -> bool {
         PacketType::DmSessionRequest
             | PacketType::DmSessionAccept
             | PacketType::DirectMessageEncrypted
+            | PacketType::FileChunkEncrypted
     )
 }

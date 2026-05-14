@@ -3,6 +3,7 @@ members = [
     "crates/app",
     "crates/commands",
     "crates/events",
+    "crates/files",
     "crates/peer",
     "crates/persistence",
     "crates/protocol",

@@ -19,6 +19,8 @@ pub struct KayaConfig {
     pub default_room: String,
     pub last_room: Option<String>,
     pub log_level: String,
+    #[serde(default)]
+    pub file_transfer: FileTransferSettings,
 }
 
 impl Default for KayaConfig {
@@ -34,6 +36,28 @@ impl Default for KayaConfig {
             default_room: DEFAULT_ROOM.into(),
             last_room: None,
             log_level: "kaya=info".into(),
+            file_transfer: FileTransferSettings::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileTransferSettings {
+    pub enabled: bool,
+    pub max_file_size_mb: u64,
+    pub chunk_size_kb: u64,
+    pub accept_from_unknown: bool,
+    pub download_dir: Option<String>,
+}
+
+impl Default for FileTransferSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_file_size_mb: 50,
+            chunk_size_kb: 64,
+            accept_from_unknown: true,
+            download_dir: None,
         }
     }
 }
@@ -78,6 +102,16 @@ impl KayaConfig {
         }
         if self.default_room.trim().is_empty() {
             return Err(KayaError::Config("default_room cannot be empty".into()));
+        }
+        if self.file_transfer.enabled && self.file_transfer.max_file_size_mb == 0 {
+            return Err(KayaError::Config(
+                "file_transfer.max_file_size_mb must be greater than 0".into(),
+            ));
+        }
+        if self.file_transfer.enabled && self.file_transfer.chunk_size_kb == 0 {
+            return Err(KayaError::Config(
+                "file_transfer.chunk_size_kb must be greater than 0".into(),
+            ));
         }
         Ok(())
     }
@@ -282,6 +316,7 @@ mod tests {
             default_room: "geral".into(),
             last_room: Some("semana-info".into()),
             log_level: "kaya=debug".into(),
+            file_transfer: FileTransferSettings::default(),
         };
 
         config_store.save(&config).unwrap();

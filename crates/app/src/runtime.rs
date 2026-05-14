@@ -1,4 +1,5 @@
 mod events;
+mod files;
 mod input;
 mod network;
 mod presentation;
@@ -6,6 +7,7 @@ mod presentation;
 use crate::diagnostics::RuntimeDiagnostics;
 use kaya_commands::CommandRegistry;
 use kaya_events::{EventBus, KayaEvent};
+use kaya_files::{FileStore, FileTransferConfig, FileTransferManager};
 use kaya_peer::PeerRegistry;
 use kaya_persistence::{ConfigStore, KayaConfig, Store};
 use kaya_security::{LocalIdentity, SecureSessionManager, TrustStore};
@@ -29,6 +31,9 @@ pub struct Runtime {
     event_rx: broadcast::Receiver<KayaEvent>,
     peers: PeerRegistry,
     rooms: kaya_rooms::RoomStore,
+    files: FileTransferManager,
+    file_store: FileStore,
+    file_config: FileTransferConfig,
     store: Store,
     trust_store: TrustStore,
     sessions: SecureSessionManager,
@@ -52,6 +57,8 @@ pub struct RuntimeInit {
     pub config: KayaConfig,
     pub bus: EventBus,
     pub trust_store: TrustStore,
+    pub file_store: FileStore,
+    pub file_config: FileTransferConfig,
 }
 
 impl Runtime {
@@ -65,6 +72,8 @@ impl Runtime {
             config,
             bus,
             trust_store,
+            file_store,
+            file_config,
         } = init;
         let node_id = identity.node_id.clone();
         let callsign = identity.callsign.clone();
@@ -81,6 +90,12 @@ impl Runtime {
         let mut ui_state = UiState::new(&node_id, &callsign, rooms.current_room());
         ui_state.diagnostics = diagnostics.to_ui();
         ui_state.identity_fingerprint = identity.short_fingerprint();
+        let mut files = FileTransferManager::new();
+        if let Ok(records) = file_store.list_records() {
+            for record in records {
+                files.load_record(record.session);
+            }
+        }
 
         Self {
             peers: PeerRegistry::with_timeout(
@@ -95,6 +110,9 @@ impl Runtime {
             event_rx: bus.subscribe(),
             bus,
             rooms,
+            files,
+            file_store,
+            file_config,
             store,
             trust_store,
             sessions: SecureSessionManager::new(identity),

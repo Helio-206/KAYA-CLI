@@ -33,6 +33,19 @@ pub struct UiRoom {
     pub current: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiFileTransfer {
+    pub file_id: String,
+    pub file_name: String,
+    pub peer: String,
+    pub percent: f64,
+    pub status: String,
+    pub security: String,
+    pub trusted: bool,
+    pub signed: bool,
+    pub hash_ok: Option<bool>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct UiDiagnostics {
     pub uptime_secs: u64,
@@ -62,6 +75,7 @@ pub struct UiState {
     pub rooms: Vec<UiRoom>,
     pub current_members: Vec<String>,
     pub peers: Vec<UiPeer>,
+    pub files: Vec<UiFileTransfer>,
     pub identity_fingerprint: String,
     pub trusted_peers: usize,
     pub blocked_peers: usize,
@@ -99,6 +113,7 @@ impl UiState {
             rooms: Vec::new(),
             current_members: Vec::new(),
             peers: Vec::new(),
+            files: Vec::new(),
             identity_fingerprint: "--".into(),
             trusted_peers: 0,
             blocked_peers: 0,

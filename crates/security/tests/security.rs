@@ -140,6 +140,48 @@ fn encrypted_dm_tamper_fails() {
 }
 
 #[test]
+fn encrypted_file_chunk_roundtrip_and_tamper_failure() {
+    let alice = LocalIdentity::generate("Ana");
+    let bob = LocalIdentity::generate("Bruno");
+    let mut alice_sessions = SecureSessionManager::new(alice.clone());
+    let mut bob_sessions = SecureSessionManager::new(bob.clone());
+
+    let request = alice_sessions.start_request(&bob.node_id);
+    let accept = bob_sessions
+        .accept_request(
+            &alice.node_id,
+            &request.session_id,
+            &request.x25519_public_key,
+            &request.fingerprint,
+        )
+        .unwrap();
+    alice_sessions
+        .complete_accept(
+            &bob.node_id,
+            &accept.session_id,
+            &accept.x25519_public_key,
+            &accept.fingerprint,
+        )
+        .unwrap();
+
+    let encrypted = alice_sessions
+        .encrypt_file_chunk(&bob.node_id, b"chunk bytes")
+        .unwrap();
+    assert_eq!(
+        bob_sessions
+            .decrypt_file_chunk(&alice.node_id, &encrypted)
+            .unwrap(),
+        b"chunk bytes"
+    );
+
+    let mut tampered = encrypted;
+    tampered.ciphertext.replace_range(0..2, "00");
+    assert!(bob_sessions
+        .decrypt_file_chunk(&alice.node_id, &tampered)
+        .is_err());
+}
+
+#[test]
 fn session_lifecycle_can_close_active_session() {
     let alice = LocalIdentity::generate("Ana");
     let bob = LocalIdentity::generate("Bruno");

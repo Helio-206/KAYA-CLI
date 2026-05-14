@@ -4,7 +4,7 @@ use kaya_persistence::{HistoryRecord, KnownPeer};
 use kaya_protocol::Packet;
 use kaya_rooms::ChatMessage;
 use kaya_shared::now_millis;
-use kaya_ui::{UiMessage, UiPeer, UiRoom};
+use kaya_ui::{UiFileTransfer, UiMessage, UiPeer, UiRoom};
 use tracing::error;
 
 impl Runtime {
@@ -122,6 +122,7 @@ impl Runtime {
         self.ui_state.space = self.rooms.current_room().to_string();
         self.ui_state.presence = self.presence;
         self.sync_security_to_ui();
+        self.sync_files_to_ui();
     }
 
     pub(super) fn sync_security_to_ui(&mut self) {
@@ -129,6 +130,32 @@ impl Runtime {
         self.ui_state.trusted_peers = self.trust_store.trusted_count();
         self.ui_state.blocked_peers = self.trust_store.blocked_count();
         self.ui_state.secure_sessions = self.sessions.active_count();
+    }
+
+    pub(super) fn sync_files_to_ui(&mut self) {
+        self.ui_state.files = self
+            .files
+            .sessions()
+            .into_iter()
+            .map(|session| {
+                let progress = session.progress();
+                UiFileTransfer {
+                    file_id: session.file_id,
+                    file_name: session.metadata.file_name,
+                    peer: session.peer_callsign,
+                    percent: progress.percent,
+                    status: session.status.to_string(),
+                    security: session.security.to_string(),
+                    trusted: session.trusted,
+                    signed: session.signed,
+                    hash_ok: match session.status {
+                        kaya_files::TransferStatus::Completed => Some(true),
+                        kaya_files::TransferStatus::Corrupted => Some(false),
+                        _ => None,
+                    },
+                }
+            })
+            .collect();
     }
 
     pub(super) fn publish(&self, event: KayaEvent) {

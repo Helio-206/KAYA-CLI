@@ -37,7 +37,16 @@
 - Security event counters and warnings.
 - Remaining future work: stronger replay windows, passphrase-protected identity files, and encrypted room modes.
 
-## Phase 4: Mesh Extensions
+## Phase 4: Secure File Transfer
+
+- Explicit file offers and accept/reject commands.
+- Safe filename validation and path traversal protection.
+- SHA-256 chunk and final-file verification.
+- Optional encrypted chunks over active secure sessions.
+- Transfer progress and metadata persistence.
+- Remaining future work: retransmission windows, resumable transfers, and mesh routing.
+
+## Phase 5: Mesh Extensions
 
 - Multi-interface discovery.
 - Optional relay mode.
@@ -45,7 +54,7 @@
 - File capsules for small offline artifacts.
 - Protocol compatibility matrix.
 
-## Phase 5: Field Tooling
+## Phase 6: Field Tooling
 
 - Diagnostics dashboard.
 - Packet inspector.

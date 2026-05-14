@@ -40,6 +40,8 @@ A malicious node could rebroadcast packets outside the intended local context.
 - The trust store in `~/.kaya/trust.toml` records known peers, first/last seen timestamps, fingerprints, and `unknown`/`trusted`/`blocked` state.
 - Blocked peers are filtered from UI peer projections and their packets are rejected before chat routing.
 - Secure DMs use `DM_SESSION_REQUEST`, `DM_SESSION_ACCEPT`, and `DIRECT_MESSAGE_ENCRYPTED`.
+- Secure file chunks can use the existing secure session with HKDF context `kaya-file-transfer-v1`.
+- File offers are manual accept/reject. Blocked peers cannot route file offers or chunks into the transfer manager.
 - The UI exposes identity fingerprint, trusted/blocked counts, active secure sessions, and security warning count.
 
 ## Operational Guidance
