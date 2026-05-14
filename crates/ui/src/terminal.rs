@@ -1,6 +1,6 @@
 use crate::render::draw_frame;
 use crate::UiState;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -40,7 +40,7 @@ impl TerminalUi {
         }
 
         match event::read()? {
-            Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
+            Event::Key(key) => match key.code {
                 KeyCode::Enter => {
                     state.dismiss_overlays();
                     let submitted = state.input.trim().to_string();
@@ -96,6 +96,11 @@ impl TerminalUi {
                 }
                 _ => Ok(None),
             },
+            Event::Paste(text) => {
+                state.dismiss_overlays();
+                state.input.push_str(&text);
+                Ok(None)
+            }
             _ => Ok(None),
         }
     }

@@ -19,8 +19,8 @@ pub(crate) fn draw_frame(frame: &mut Frame, state: &UiState) {
             vec![
                 Constraint::Length(6),
                 Constraint::Min(6),
-                Constraint::Length(7),
-                Constraint::Length(3),
+                Constraint::Length(6),
+                Constraint::Length(4),
             ]
         } else {
             vec![
@@ -114,14 +114,15 @@ fn draw_header(frame: &mut Frame, area: Rect, state: &UiState) {
             Span::styled(state.security_warnings.to_string(), warning_style()),
         ]),
         Line::from(vec![
-            Span::styled("QUICK ", label_style()),
-            Span::styled("/help", muted_style()),
-            Span::raw("  "),
-            Span::styled("/who", muted_style()),
-            Span::raw("  "),
-            Span::styled("/join semana-info", muted_style()),
-            Span::raw("  "),
-            Span::styled("/secure-msg Ana teste", muted_style()),
+            Span::styled("INPUT ", label_style()),
+            if state.input.is_empty() {
+                Span::styled(
+                    "/help  /who  /join semana-info  /secure-msg Ana teste",
+                    muted_style(),
+                )
+            } else {
+                Span::styled(state.input.as_str(), value_style())
+            },
         ]),
     ];
 
@@ -502,6 +503,7 @@ fn draw_network(frame: &mut Frame, area: Rect, state: &UiState) {
         Line::from(peer_line(state)),
         Line::from(mesh_line(state)),
         Line::from(security_line(state)),
+        Line::from(input_echo_line(state)),
     ];
 
     if !state.diagnostics.event_counters.is_empty() {
@@ -528,19 +530,41 @@ fn draw_network(frame: &mut Frame, area: Rect, state: &UiState) {
 }
 
 fn draw_input(frame: &mut Frame, area: Rect, state: &UiState) {
-    let input = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("COMMAND ", label_style()),
-            Span::styled("> ", accent_style()),
-            Span::styled(&state.input, value_style()),
-        ]),
-        Line::from(vec![
-            Span::styled("HINT ", label_style()),
-            Span::styled(command_hint(state), muted_style()),
-        ]),
-    ])
-    .block(panel_block(" INPUT "));
-    frame.render_widget(input, area);
+    frame.render_widget(panel_block(" INPUT "), area);
+
+    let inner = Rect {
+        x: area.x.saturating_add(2),
+        y: area.y.saturating_add(1),
+        width: area.width.saturating_sub(4),
+        height: area.height.saturating_sub(2),
+    };
+
+    let command_text = if state.input.is_empty() {
+        "> type here...".to_string()
+    } else {
+        format!("> {}", state.input)
+    };
+
+    let lines = if inner.height >= 2 {
+        vec![
+            Line::from(Span::styled(command_text, value_style())),
+            Line::from(vec![
+                Span::styled("hint ", label_style()),
+                Span::styled(command_hint(state), muted_style()),
+            ]),
+        ]
+    } else {
+        vec![Line::from(Span::styled(command_text, value_style()))]
+    };
+
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), inner);
+
+    let cursor_x = inner
+        .x
+        .saturating_add(2)
+        .saturating_add(state.input.chars().count().min(inner.width.saturating_sub(3) as usize) as u16);
+    let cursor_y = inner.y;
+    frame.set_cursor_position((cursor_x, cursor_y));
 }
 
 fn draw_splash(frame: &mut Frame, area: Rect) {
@@ -854,5 +878,16 @@ fn security_line(state: &UiState) -> Vec<Span<'_>> {
         Span::raw("    "),
         Span::styled("warnings: ", label_style()),
         Span::styled(state.security_warnings.to_string(), warning_style()),
+    ]
+}
+
+fn input_echo_line(state: &UiState) -> Vec<Span<'_>> {
+    vec![
+        Span::styled("input: ", label_style()),
+        if state.input.is_empty() {
+            Span::styled("<empty>", muted_style())
+        } else {
+            Span::styled(state.input.as_str(), value_style())
+        },
     ]
 }

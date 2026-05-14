@@ -22,10 +22,9 @@ impl Runtime {
             }
             Ok(ParsedInput::Command(command)) => self.handle_command(command).await,
             Err(err) => {
-                self.publish(KayaEvent::ErrorOccurred {
-                    scope: "commands".into(),
-                    message: err.to_string(),
-                });
+                let message = err.to_string();
+                self.ui_state.push_log(format!("command rejected: {message}"));
+                self.system_message(message);
                 Ok(false)
             }
         }

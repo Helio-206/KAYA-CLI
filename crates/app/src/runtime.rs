@@ -162,8 +162,9 @@ impl Runtime {
     pub async fn run(&mut self) -> Result<()> {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         self.network_shutdown_tx = Some(shutdown_tx);
-        self.network_task =
-            Some(self.spawn_network_reader(shutdown_rx, self.timeouts.network_recv_ms));
+        self.network_task = Some(
+            self.spawn_network_reader(shutdown_rx, self.timeouts.network_recv_ms),
+        );
         self.bootstrap().await;
 
         let mut ui = TerminalUi::enter()?;
@@ -201,10 +202,6 @@ impl Runtime {
                     self.sync_mesh_to_ui();
                 }
                 _ = render.tick() => {
-                    self.ui_state.diagnostics = self.diagnostics.to_ui();
-                    let started = Instant::now();
-                    ui.draw(&self.ui_state)?;
-                    self.diagnostics.render_time_ms = started.elapsed().as_millis() as u64;
                     if let Some(input) = ui.poll_input(&mut self.ui_state, Duration::from_millis(0))? {
                         if self.handle_input(input).await? {
                             self.publish(KayaEvent::ShutdownInitiated {
@@ -213,6 +210,10 @@ impl Runtime {
                             break;
                         }
                     }
+                    self.ui_state.diagnostics = self.diagnostics.to_ui();
+                    let started = Instant::now();
+                    ui.draw(&self.ui_state)?;
+                    self.diagnostics.render_time_ms = started.elapsed().as_millis() as u64;
                 }
             }
         }
@@ -235,8 +236,7 @@ impl Runtime {
                 Ok(Ok(())) => {}
                 Ok(Err(err)) if err.is_cancelled() => {}
                 Ok(Err(err)) => {
-                    self.ui_state
-                        .push_log(format!("network task join failed: {err}"));
+                    self.ui_state.push_log(format!("network task join failed: {err}"));
                 }
                 Err(_) => {
                     self.ui_state.push_log("network shutdown timed out");
