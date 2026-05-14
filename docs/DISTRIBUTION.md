@@ -6,27 +6,31 @@ KAYA `0.1.0` is packaged for binary-first distribution so users do not need to c
 
 - `kaya-cli-0.1.0-x86_64-unknown-linux-gnu.tar.gz`
 
+## Supported Optional Artifact
+
+- `kaya-cli-0.1.0-x86_64-pc-windows-gnu.zip`
+
 This archive contains:
 
-- `bin/kaya`
+- `bin/kaya` on Linux builds
+- `bin/kaya.exe` on Windows builds
 - release notes and installation docs
 - install, uninstall, local-install, and checksum helper scripts
 
-## Optional Artifacts
-
-Phase 8 keeps `.deb`, Windows `.zip`, and macOS `.tar.gz` as optional tracks. The release pipeline is prepared around checksums and install docs, but the guaranteed release target for `0.1.0` remains Linux x86_64 tarballs.
+Phase 8 keeps `.deb` and macOS `.tar.gz` as optional tracks. Windows `.zip` packaging is available through the same release script, while Linux x86_64 tarballs remain the guaranteed release target for `0.1.0`.
 
 ## Release Workflow
 
 ```bash
 ./scripts/package-release.sh
+KAYA_TARGET=x86_64-pc-windows-gnu ./scripts/package-release.sh
 ./scripts/generate-checksums.sh
 ```
 
 Outputs under `dist/`:
 
 - the staged unpacked directory
-- the versioned `.tar.gz` archive
+- the versioned `.tar.gz` or `.zip` archive
 - `SHA256SUMS`
 
 ## Published Release Layout
