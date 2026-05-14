@@ -81,6 +81,10 @@ impl RelayRegistry {
         self.peers.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.peers.is_empty()
+    }
+
     pub fn contains(&self, node_id: &str) -> bool {
         self.peers.contains_key(node_id)
     }
