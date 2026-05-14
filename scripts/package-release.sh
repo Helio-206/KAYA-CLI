@@ -19,16 +19,32 @@ if [[ -z "${host_triple}" ]]; then
     exit 1
 fi
 
-package_name="kaya-cli-${version}-${host_triple}"
+target_triple="${KAYA_TARGET:-${host_triple}}"
+package_name="kaya-cli-${version}-${target_triple}"
 staging_dir="${out_dir}/${package_name}"
-archive_path="${out_dir}/${package_name}.tar.gz"
+
+if [[ "${target_triple}" == *windows* ]]; then
+    archive_path="${out_dir}/${package_name}.zip"
+    binary_name="kaya.exe"
+else
+    archive_path="${out_dir}/${package_name}.tar.gz"
+    binary_name="kaya"
+fi
 
 rm -rf "${staging_dir}"
 mkdir -p "${staging_dir}/bin" "${staging_dir}/docs" "${staging_dir}/scripts"
 
-cargo build --release -p kaya-app --bin kaya
+cargo_args=(build --release -p kaya-app --bin kaya)
+build_dir="target/release"
 
-install -m 0755 target/release/kaya "${staging_dir}/bin/kaya"
+if [[ "${target_triple}" != "${host_triple}" ]]; then
+    cargo_args+=(--target "${target_triple}")
+    build_dir="target/${target_triple}/release"
+fi
+
+cargo "${cargo_args[@]}"
+
+install -m 0755 "${build_dir}/${binary_name}" "${staging_dir}/bin/${binary_name}"
 install -m 0644 README.md LICENSE Cargo.toml "${staging_dir}/"
 install -m 0644 \
     docs/COMMANDS.md \
@@ -54,7 +70,19 @@ install -m 0755 \
     scripts/uninstall.sh \
     "${staging_dir}/scripts/"
 
-tar -C "${out_dir}" -czf "${archive_path}" "${package_name}"
+if [[ "${target_triple}" == *windows* ]]; then
+    if ! command -v zip >/dev/null 2>&1; then
+        printf 'zip is required to package Windows artifacts\n' >&2
+        exit 1
+    fi
+    rm -f "${archive_path}"
+    (
+        cd "${out_dir}"
+        zip -qr "$(basename "${archive_path}")" "${package_name}"
+    )
+else
+    tar -C "${out_dir}" -czf "${archive_path}" "${package_name}"
+fi
 
 printf 'Created release archive: %s\n' "${archive_path}"
 printf 'Staging directory: %s\n' "${staging_dir}"
