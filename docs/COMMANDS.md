@@ -45,6 +45,11 @@ The parser is registry-based: command metadata defines aliases, validation, usag
 | `/close-session <peer>` | `/close-session Ana` | Close a secure DM session. |
 | `/routes` | `/routes` | List mesh routing table entries. |
 | `/route <target>` | `/route KY-A91C0D` | Show the best mesh route to a node id or callsign. |
+| `/relay-status` | `/relay-status` | Show WAN relay state, peer count, and room bridging mode. |
+| `/relay-peers` | `/relay-peers` | List peers currently announced by the active relay. |
+| `/relay-connect <tcp://host:port>` | `/relay-connect tcp://relay.example:7777` | Connect to a WAN relay from the running CLI. |
+| `/relay-disconnect` | `/relay-disconnect` | Disconnect from the active WAN relay. |
+| `/relay-mode [local-first|relay-only]` | `/relay-mode relay-only` | Show or change how room traffic is mirrored to the relay. |
 | `/mesh-status` | `/mesh-status` | Show mesh relay diagnostics. |
 | `/mesh-clear` | `/mesh-clear` | Clear mesh routes and seen-packet cache. |
 | `/history [room]` | `/history semana-info` | Show local room history. |
@@ -92,6 +97,9 @@ Aliases:
 > /files
 > /sessions
 > /routes
+> /relay-status
+> /relay-connect tcp://relay.example:7777
+> /relay-peers
 > /mesh-status
 > /msg KY-71AF92 teste privado
 > /presence busy

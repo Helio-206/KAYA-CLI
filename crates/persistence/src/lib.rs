@@ -25,6 +25,8 @@ pub struct KayaConfig {
     #[serde(default)]
     pub mesh: MeshSettings,
     #[serde(default)]
+    pub relay: RelaySettings,
+    #[serde(default)]
     pub timeouts: TimeoutSettings,
 }
 
@@ -88,6 +90,7 @@ impl Default for KayaConfig {
             log_level: "kaya=info".into(),
             file_transfer: FileTransferSettings::default(),
             mesh: MeshSettings::default(),
+            relay: RelaySettings::default(),
             timeouts: TimeoutSettings::default(),
         }
     }
@@ -123,6 +126,69 @@ pub struct MeshSettings {
     pub relay_encrypted_only: bool,
     pub route_expiry_seconds: u64,
     pub max_seen_packets: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelaySettings {
+    pub enabled: bool,
+    pub url: Option<String>,
+    pub bind: Option<String>,
+    pub prefer_local: bool,
+    pub heartbeat_interval_ms: u64,
+    pub connection_timeout_ms: u64,
+    #[serde(default)]
+    pub rooms: RelayRoomSettings,
+    #[serde(default)]
+    pub file_transfer: RelayFileTransferSettings,
+}
+
+impl Default for RelaySettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            url: None,
+            bind: None,
+            prefer_local: true,
+            heartbeat_interval_ms: 5_000,
+            connection_timeout_ms: 15_000,
+            rooms: RelayRoomSettings::default(),
+            file_transfer: RelayFileTransferSettings::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayRoomSettings {
+    pub enabled: bool,
+    pub broadcast: bool,
+    pub bridge_local: bool,
+}
+
+impl Default for RelayRoomSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            broadcast: true,
+            bridge_local: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayFileTransferSettings {
+    pub enabled: bool,
+    pub allow_chunks: bool,
+    pub max_file_size_mb: u64,
+}
+
+impl Default for RelayFileTransferSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            allow_chunks: false,
+            max_file_size_mb: 20,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -226,6 +292,28 @@ impl KayaConfig {
         if self.mesh.enabled && self.mesh.max_seen_packets == 0 {
             return Err(KayaError::Config(
                 "mesh.max_seen_packets must be greater than 0".into(),
+            ));
+        }
+        if self.relay.enabled {
+            if self.relay.heartbeat_interval_ms == 0 {
+                return Err(KayaError::Config(
+                    "relay.heartbeat_interval_ms must be greater than 0".into(),
+                ));
+            }
+            if self.relay.connection_timeout_ms == 0 {
+                return Err(KayaError::Config(
+                    "relay.connection_timeout_ms must be greater than 0".into(),
+                ));
+            }
+            if let Some(url) = &self.relay.url {
+                if !url.trim().is_empty() && !url.starts_with("tcp://") {
+                    return Err(KayaError::Config("relay.url must start with tcp://".into()));
+                }
+            }
+        }
+        if self.relay.file_transfer.enabled && self.relay.file_transfer.max_file_size_mb == 0 {
+            return Err(KayaError::Config(
+                "relay.file_transfer.max_file_size_mb must be greater than 0".into(),
             ));
         }
         if self.timeouts.packet_send_ms == 0
@@ -494,6 +582,7 @@ mod tests {
             log_level: "kaya=debug".into(),
             file_transfer: FileTransferSettings::default(),
             mesh: MeshSettings::default(),
+            relay: RelaySettings::default(),
             timeouts: TimeoutSettings::default(),
         };
 

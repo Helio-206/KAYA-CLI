@@ -1,6 +1,7 @@
 use super::Runtime;
 use kaya_events::KayaEvent;
 use kaya_protocol::{Packet, PacketType};
+use kaya_relay::{RelayClient, RelayPolicy, RelayRegistration};
 use kaya_security::sign_packet;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -43,6 +44,101 @@ impl Runtime {
                                 });
                             }
                             Err(_) => {}
+                        }
+                    }
+                }
+            }
+        })
+    }
+
+    pub(super) async fn connect_relay(&mut self, shutdown_rx: watch::Receiver<bool>) {
+        if !self.config.relay.enabled {
+            return;
+        }
+
+        let Some(url) = self
+            .config
+            .relay
+            .url
+            .as_ref()
+            .filter(|url| !url.trim().is_empty())
+            .cloned()
+        else {
+            self.system_message("relay enabled but relay.url is empty");
+            return;
+        };
+
+        match RelayClient::connect(
+            &url,
+            RelayRegistration {
+                node_id: self.node_id.clone(),
+                callsign: self.callsign.clone(),
+                fingerprint: self.identity.fingerprint.clone(),
+                capabilities: vec!["rooms".into(), "dm".into(), "mesh".into(), "files".into()],
+            },
+            RelayPolicy {
+                allow_unknown: self.file_config.accept_from_unknown,
+                max_clients: 100,
+                heartbeat_interval_ms: self.config.relay.heartbeat_interval_ms,
+                connection_timeout_ms: self.config.relay.connection_timeout_ms,
+                rooms: kaya_relay::RelayRoomPolicy {
+                    enabled: self.config.relay.rooms.enabled,
+                    broadcast: self.config.relay.rooms.broadcast,
+                },
+                file_transfer: kaya_relay::RelayFileTransferPolicy {
+                    enabled: self.config.relay.file_transfer.enabled,
+                    allow_chunks: self.config.relay.file_transfer.allow_chunks,
+                    max_file_size_mb: self.config.relay.file_transfer.max_file_size_mb,
+                },
+            },
+        )
+        .await
+        {
+            Ok(client) => {
+                self.relay_tx = Some(client.sender());
+                self.relay_task = Some(self.spawn_relay_reader(client, shutdown_rx, url.clone()));
+                self.system_message(format!("relay dialing {url}"));
+            }
+            Err(err) => {
+                self.system_message(format!("relay connection failed: {err}"));
+            }
+        }
+    }
+
+    fn spawn_relay_reader(
+        &self,
+        mut client: RelayClient,
+        mut shutdown_rx: watch::Receiver<bool>,
+        relay_url: String,
+    ) -> JoinHandle<()> {
+        let bus = self.bus.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    changed = shutdown_rx.changed() => {
+                        if changed.is_ok() && *shutdown_rx.borrow() {
+                            break;
+                        }
+                    }
+                    received = client.recv() => {
+                        match received {
+                            Some(packet) => {
+                                let bytes = serde_json::to_vec(&packet)
+                                    .map(|buffer| buffer.len())
+                                    .unwrap_or_default();
+                                let _ = bus.publish(KayaEvent::PacketReceived {
+                                    packet,
+                                    source: format!("relay:{relay_url}"),
+                                    bytes,
+                                });
+                            }
+                            None => {
+                                let _ = bus.publish(KayaEvent::ErrorOccurred {
+                                    scope: "relay.rx".into(),
+                                    message: format!("relay stream closed {relay_url}"),
+                                });
+                                break;
+                            }
                         }
                     }
                 }
@@ -149,9 +245,92 @@ impl Runtime {
                     });
                 }
             }
+
+            self.mirror_packet_to_relay(&packet);
         }
         .instrument(span)
         .await;
+    }
+
+    pub(super) fn send_packet_via_relay(
+        &mut self,
+        destination_node: &str,
+        room: Option<String>,
+        packet: &Packet,
+    ) -> bool {
+        let Some(relay_tx) = &self.relay_tx else {
+            return false;
+        };
+
+        let Ok(inner_packet) = serde_json::to_value(packet) else {
+            self.publish(KayaEvent::ErrorOccurred {
+                scope: "relay.tx".into(),
+                message: "failed to encode relay payload".into(),
+            });
+            return false;
+        };
+
+        relay_tx
+            .send(Packet::relay_forward(
+                self.node_id.clone(),
+                self.callsign.clone(),
+                destination_node.to_string(),
+                room,
+                inner_packet,
+            ))
+            .map_err(|err| {
+                self.publish(KayaEvent::ErrorOccurred {
+                    scope: "relay.tx".into(),
+                    message: err.to_string(),
+                });
+            })
+            .is_ok()
+    }
+
+    fn mirror_packet_to_relay(&mut self, packet: &Packet) {
+        if !self.config.relay.enabled
+            || !self.config.relay.rooms.enabled
+            || !self.config.relay.rooms.bridge_local
+        {
+            return;
+        }
+
+        if !matches!(
+            packet.packet_type,
+            PacketType::Hello
+                | PacketType::Heartbeat
+                | PacketType::Leave
+                | PacketType::JoinRoom
+                | PacketType::RoomAnnounce
+                | PacketType::RoomJoin
+                | PacketType::RoomLeave
+                | PacketType::RoomMembersRequest
+                | PacketType::RoomMembersResponse
+                | PacketType::PresenceUpdate
+                | PacketType::RoomMessage
+        ) {
+            return;
+        }
+
+        let _ = self.send_packet_via_relay("*", packet.room.clone(), packet);
+    }
+
+    pub(super) fn resolve_relay_target(&self, target: &str) -> Option<(String, String)> {
+        if let Some(peer) = self.relay_peers.get(target) {
+            return Some((peer.node_id.clone(), peer.callsign.clone()));
+        }
+        if kaya_shared::is_valid_node_id(target) && self.relay_tx.is_some() {
+            return Some((target.to_string(), target.to_string()));
+        }
+        let mut matches = self
+            .relay_peers
+            .values()
+            .filter(|peer| peer.callsign.eq_ignore_ascii_case(target));
+        let first = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        Some((first.node_id.clone(), first.callsign.clone()))
     }
 
     pub(super) fn publish_peer_event(&mut self, event: kaya_peer::PeerEvent) {

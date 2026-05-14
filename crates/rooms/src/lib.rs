@@ -243,6 +243,14 @@ impl RoomStore {
             PacketType::RoomMessage => self.observe_room_message(packet),
             PacketType::DirectMessage => self.observe_direct_message(packet),
             PacketType::DmAck
+            | PacketType::RelayRegister
+            | PacketType::RelayRegistered
+            | PacketType::RelayPeerList
+            | PacketType::RelayForward
+            | PacketType::RelayDelivered
+            | PacketType::RelayError
+            | PacketType::RelayHeartbeat
+            | PacketType::RelayDisconnect
             | PacketType::DmSessionRequest
             | PacketType::DmSessionAccept
             | PacketType::DirectMessageEncrypted

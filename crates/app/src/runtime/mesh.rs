@@ -31,13 +31,35 @@ impl Runtime {
             return;
         }
 
-        let Some(route) = self.mesh.best_route(destination_node).cloned() else {
+        let route = self.mesh.best_route(destination_node).cloned();
+
+        if route.is_none() {
+            if self.trust_store.is_blocked(destination_node) {
+                self.publish(KayaEvent::RelayDenied {
+                    source_node: self.node_id.clone(),
+                    destination_node: destination_node.to_string(),
+                    reason: "blocked peer in relay path".into(),
+                });
+                return;
+            }
+            if let Err(err) = sign_packet(&mut packet, &self.identity) {
+                self.publish(KayaEvent::SecurityWarning {
+                    node_id: Some(self.node_id.clone()),
+                    message: format!("outgoing relay packet signing failed: {err}"),
+                });
+                return;
+            }
+            if self.send_packet_via_relay(destination_node, packet.room.clone(), &packet) {
+                return;
+            }
             self.send_route_request(destination_node).await;
             self.system_message(format!(
                 "no mesh route to {destination_node}; route request sent"
             ));
             return;
-        };
+        }
+
+        let route = route.expect("route checked above");
 
         if self.trust_store.is_blocked(&route.next_hop)
             || self.trust_store.is_blocked(destination_node)

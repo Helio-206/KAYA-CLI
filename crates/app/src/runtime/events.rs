@@ -1,6 +1,9 @@
 use super::Runtime;
 use kaya_events::KayaEvent;
-use kaya_protocol::{Packet, PacketType};
+use kaya_protocol::{
+    Packet, PacketType, RelayDeliveredPayload, RelayErrorPayload, RelayForwardPayload,
+    RelayPeerListPayload, RelayRegisteredPayload,
+};
 use kaya_rooms::{ChatMessage, RouteOutcome};
 use kaya_security::{
     encrypted_payload_from_packet, packet_requires_signature_validation,
@@ -448,6 +451,9 @@ impl Runtime {
             }
             KayaEvent::ErrorOccurred { scope, message } => {
                 self.diagnostics.malformed_packets += u64::from(scope == "transport.rx");
+                if scope.starts_with("relay") {
+                    self.relay_connected = false;
+                }
                 error!(%scope, %message, "runtime error");
                 self.ui_state.push_log(format!("{scope}: {message}"));
                 self.system_message(format!("{scope}: {message}"));
@@ -479,6 +485,10 @@ impl Runtime {
         );
 
         async {
+            if self.route_relay_packet(&packet, &source, bytes).await {
+                return;
+            }
+
             if !self.dedup.observe(packet.packet_id) {
                 self.diagnostics.duplicate_packets += 1;
                 debug!("duplicate packet dropped");
@@ -516,6 +526,92 @@ impl Runtime {
         }
         .instrument(span)
         .await;
+    }
+
+    async fn route_relay_packet(&mut self, packet: &Packet, source: &str, bytes: usize) -> bool {
+        match packet.packet_type {
+            PacketType::RelayRegister => true,
+            PacketType::RelayRegistered => {
+                if let Ok(payload) =
+                    serde_json::from_value::<RelayRegisteredPayload>(packet.payload.clone())
+                {
+                    self.relay_connected = true;
+                    self.ui_state.status = "CONNECTED+RELAY".into();
+                    self.ui_state
+                        .push_log(format!("relay registered {}", payload.relay_id));
+                    self.system_message(payload.message);
+                }
+                true
+            }
+            PacketType::RelayPeerList => {
+                if let Ok(payload) =
+                    serde_json::from_value::<RelayPeerListPayload>(packet.payload.clone())
+                {
+                    self.relay_peers = payload
+                        .peers
+                        .into_iter()
+                        .filter(|peer| peer.node_id != self.node_id)
+                        .map(|peer| (peer.node_id.clone(), peer))
+                        .collect();
+                    self.ui_state
+                        .push_log(format!("relay peers synced {}", self.relay_peers.len()));
+                }
+                true
+            }
+            PacketType::RelayForward => {
+                let Ok(payload) =
+                    serde_json::from_value::<RelayForwardPayload>(packet.payload.clone())
+                else {
+                    self.system_message("relay forward payload malformed");
+                    return true;
+                };
+                let Ok(inner_packet) = serde_json::from_value::<Packet>(payload.inner_packet)
+                else {
+                    self.system_message("relay inner packet malformed");
+                    return true;
+                };
+                self.publish(KayaEvent::PacketReceived {
+                    packet: inner_packet,
+                    source: source.to_string(),
+                    bytes,
+                });
+                true
+            }
+            PacketType::RelayDelivered => {
+                if let Ok(payload) =
+                    serde_json::from_value::<RelayDeliveredPayload>(packet.payload.clone())
+                {
+                    self.ui_state.push_log(format!(
+                        "relay delivered {} via {}",
+                        payload.destination_node, payload.relay_packet_id,
+                    ));
+                }
+                true
+            }
+            PacketType::RelayError => {
+                self.relay_connected = false;
+                self.ui_state.status = "CONNECTED".into();
+                if let Ok(payload) =
+                    serde_json::from_value::<RelayErrorPayload>(packet.payload.clone())
+                {
+                    self.system_message(format!(
+                        "relay error {}: {}",
+                        payload.code, payload.message
+                    ));
+                } else {
+                    self.system_message("relay reported an error");
+                }
+                true
+            }
+            PacketType::RelayHeartbeat => true,
+            PacketType::RelayDisconnect => {
+                self.relay_connected = false;
+                self.ui_state.status = "CONNECTED".into();
+                self.system_message("relay disconnected");
+                true
+            }
+            _ => false,
+        }
     }
 
     pub(super) fn apply_room_joined(

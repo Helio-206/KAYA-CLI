@@ -50,6 +50,14 @@ pub enum PacketType {
     Hello,
     Heartbeat,
     Leave,
+    RelayRegister,
+    RelayRegistered,
+    RelayPeerList,
+    RelayForward,
+    RelayDelivered,
+    RelayError,
+    RelayHeartbeat,
+    RelayDisconnect,
     JoinRoom,
     RoomAnnounce,
     RoomJoin,
@@ -187,6 +195,60 @@ pub struct RouteResponsePayload {
     pub encrypted_capable: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayRegisterPayload {
+    pub fingerprint: String,
+    pub capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayRegisteredPayload {
+    pub relay_id: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayPeerDescriptor {
+    pub node_id: String,
+    pub callsign: String,
+    pub fingerprint: String,
+    pub capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayPeerListPayload {
+    pub peers: Vec<RelayPeerDescriptor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RelayForwardPayload {
+    pub destination_node: String,
+    pub room: Option<String>,
+    pub inner_packet: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayDeliveredPayload {
+    pub destination_node: String,
+    pub relay_packet_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayErrorPayload {
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayHeartbeatPayload {
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayDisconnectPayload {
+    pub reason: String,
+}
+
 impl Packet {
     pub fn new(
         packet_type: PacketType,
@@ -263,6 +325,155 @@ impl Packet {
         room: impl Into<String>,
     ) -> Self {
         Self::room_join(node_id, callsign, room)
+    }
+
+    pub fn relay_register(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        fingerprint: impl Into<String>,
+        capabilities: Vec<String>,
+    ) -> Self {
+        Self::new(
+            PacketType::RelayRegister,
+            node_id,
+            callsign,
+            None,
+            None,
+            json!(RelayRegisterPayload {
+                fingerprint: fingerprint.into(),
+                capabilities,
+            }),
+        )
+    }
+
+    pub fn relay_registered(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        relay_id: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            PacketType::RelayRegistered,
+            node_id,
+            callsign,
+            None,
+            None,
+            json!(RelayRegisteredPayload {
+                relay_id: relay_id.into(),
+                message: message.into(),
+            }),
+        )
+    }
+
+    pub fn relay_peer_list(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        peers: Vec<RelayPeerDescriptor>,
+    ) -> Self {
+        Self::new(
+            PacketType::RelayPeerList,
+            node_id,
+            callsign,
+            None,
+            None,
+            json!(RelayPeerListPayload { peers }),
+        )
+    }
+
+    pub fn relay_forward(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        destination_node: impl Into<String>,
+        room: Option<String>,
+        inner_packet: Value,
+    ) -> Self {
+        let destination_node = destination_node.into();
+        Self::new(
+            PacketType::RelayForward,
+            node_id,
+            callsign,
+            room.clone(),
+            Some(destination_node.clone()),
+            json!(RelayForwardPayload {
+                destination_node,
+                room,
+                inner_packet,
+            }),
+        )
+    }
+
+    pub fn relay_delivered(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        destination_node: impl Into<String>,
+        relay_packet_id: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            PacketType::RelayDelivered,
+            node_id,
+            callsign,
+            None,
+            Some(target_node.into()),
+            json!(RelayDeliveredPayload {
+                destination_node: destination_node.into(),
+                relay_packet_id: relay_packet_id.into(),
+            }),
+        )
+    }
+
+    pub fn relay_error(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: Option<String>,
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            PacketType::RelayError,
+            node_id,
+            callsign,
+            None,
+            target_node,
+            json!(RelayErrorPayload {
+                code: code.into(),
+                message: message.into(),
+            }),
+        )
+    }
+
+    pub fn relay_heartbeat(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        status: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            PacketType::RelayHeartbeat,
+            node_id,
+            callsign,
+            None,
+            None,
+            json!(RelayHeartbeatPayload {
+                status: status.into(),
+            }),
+        )
+    }
+
+    pub fn relay_disconnect(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            PacketType::RelayDisconnect,
+            node_id,
+            callsign,
+            None,
+            None,
+            json!(RelayDisconnectPayload {
+                reason: reason.into(),
+            }),
+        )
     }
 
     pub fn room_announce(
@@ -918,6 +1129,9 @@ impl Packet {
             PacketType::DmSessionRequest
             | PacketType::DmSessionAccept
             | PacketType::DirectMessageEncrypted
+            | PacketType::RelayForward
+            | PacketType::RelayDelivered
+            | PacketType::RelayError
             | PacketType::FileOffer
             | PacketType::FileAccept
             | PacketType::FileReject
@@ -947,6 +1161,11 @@ impl Packet {
             }
             PacketType::RouteAnnounce
             | PacketType::RouteRequest
+            | PacketType::RelayRegister
+            | PacketType::RelayRegistered
+            | PacketType::RelayPeerList
+            | PacketType::RelayHeartbeat
+            | PacketType::RelayDisconnect
             | PacketType::System
             | PacketType::Error => {}
         }
@@ -967,6 +1186,35 @@ impl Packet {
         }
 
         match self.packet_type {
+            PacketType::RelayRegister => {
+                require_payload_str(&self.payload, self.packet_type, "fingerprint")?;
+                require_payload_array(&self.payload, self.packet_type, "capabilities")?;
+            }
+            PacketType::RelayRegistered => {
+                require_payload_str(&self.payload, self.packet_type, "relay_id")?;
+                require_payload_str(&self.payload, self.packet_type, "message")?;
+            }
+            PacketType::RelayPeerList => {
+                require_payload_array(&self.payload, self.packet_type, "peers")?;
+            }
+            PacketType::RelayForward => {
+                require_payload_str(&self.payload, self.packet_type, "destination_node")?;
+                require_payload_object(&self.payload, self.packet_type, "inner_packet")?;
+            }
+            PacketType::RelayDelivered => {
+                require_payload_str(&self.payload, self.packet_type, "destination_node")?;
+                require_payload_str(&self.payload, self.packet_type, "relay_packet_id")?;
+            }
+            PacketType::RelayError => {
+                require_payload_str(&self.payload, self.packet_type, "code")?;
+                require_payload_str(&self.payload, self.packet_type, "message")?;
+            }
+            PacketType::RelayHeartbeat => {
+                require_payload_str(&self.payload, self.packet_type, "status")?;
+            }
+            PacketType::RelayDisconnect => {
+                require_payload_str(&self.payload, self.packet_type, "reason")?;
+            }
             PacketType::DmSessionRequest | PacketType::DmSessionAccept => {
                 for field in ["session_id", "x25519_public_key", "fingerprint"] {
                     if !payload_has_str(&self.payload, field) {
@@ -1173,6 +1421,18 @@ fn require_payload_str_or_object(
         return Err(ProtocolError::MissingField { packet_type, field });
     };
     if value.is_string() || value.is_object() || value.is_array() || value.is_number() {
+        Ok(())
+    } else {
+        Err(ProtocolError::MissingField { packet_type, field })
+    }
+}
+
+fn require_payload_object(
+    payload: &Value,
+    packet_type: PacketType,
+    field: &'static str,
+) -> ProtocolResult<()> {
+    if payload.get(field).map(Value::is_object).unwrap_or(false) {
         Ok(())
     } else {
         Err(ProtocolError::MissingField { packet_type, field })

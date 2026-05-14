@@ -13,13 +13,15 @@ use kaya_files::{FileStore, FileTransferConfig, FileTransferManager};
 use kaya_mesh::{MeshPolicy, MeshState};
 use kaya_peer::PeerRegistry;
 use kaya_persistence::{ConfigProfile, ConfigStore, KayaConfig, Store, TimeoutSettings};
+use kaya_protocol::RelayPeerDescriptor;
 use kaya_security::{LocalIdentity, SecureSessionManager, TrustStore};
 use kaya_shared::{PresenceStatus, Result};
 use kaya_transport::{MulticastTransport, PacketDeduplicator};
 use kaya_ui::{TerminalUi, UiState};
+
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time;
 use tracing::info;
@@ -60,6 +62,10 @@ pub struct Runtime {
     presence: PresenceStatus,
     dedup: PacketDeduplicator,
     network_task: Option<JoinHandle<()>>,
+    relay_tx: Option<mpsc::UnboundedSender<kaya_protocol::Packet>>,
+    relay_task: Option<JoinHandle<()>>,
+    relay_connected: bool,
+    relay_peers: HashMap<String, RelayPeerDescriptor>,
     network_shutdown_tx: Option<watch::Sender<bool>>,
 }
 
@@ -155,6 +161,10 @@ impl Runtime {
             presence: PresenceStatus::Online,
             dedup: PacketDeduplicator::new(4096),
             network_task: None,
+            relay_tx: None,
+            relay_task: None,
+            relay_connected: false,
+            relay_peers: HashMap::new(),
             network_shutdown_tx: None,
         }
     }
@@ -163,7 +173,8 @@ impl Runtime {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         self.network_shutdown_tx = Some(shutdown_tx);
         self.network_task =
-            Some(self.spawn_network_reader(shutdown_rx, self.timeouts.network_recv_ms));
+            Some(self.spawn_network_reader(shutdown_rx.clone(), self.timeouts.network_recv_ms));
+        self.connect_relay(shutdown_rx).await;
         self.bootstrap().await;
 
         let mut ui = TerminalUi::enter()?;
@@ -240,6 +251,30 @@ impl Runtime {
                 }
                 Err(_) => {
                     self.ui_state.push_log("network shutdown timed out");
+                }
+            }
+        }
+
+        if let Some(relay_tx) = &self.relay_tx {
+            let _ = relay_tx.send(kaya_protocol::Packet::relay_disconnect(
+                self.node_id.clone(),
+                self.callsign.clone(),
+                "shutdown",
+            ));
+        }
+        self.relay_tx = None;
+        self.relay_connected = false;
+
+        if let Some(task) = self.relay_task.take() {
+            match time::timeout(Duration::from_millis(self.timeouts.shutdown_ms), task).await {
+                Ok(Ok(())) => {}
+                Ok(Err(err)) if err.is_cancelled() => {}
+                Ok(Err(err)) => {
+                    self.ui_state
+                        .push_log(format!("relay task join failed: {err}"));
+                }
+                Err(_) => {
+                    self.ui_state.push_log("relay shutdown timed out");
                 }
             }
         }

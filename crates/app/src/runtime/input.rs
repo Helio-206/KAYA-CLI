@@ -77,6 +77,11 @@ impl Runtime {
             Command::CloseSession { peer } => self.close_secure_session(&peer),
             Command::Routes => self.show_routes(),
             Command::Route { node_id } => self.show_route(&node_id),
+            Command::RelayStatus => self.show_relay_status(),
+            Command::RelayPeers => self.show_relay_peers(),
+            Command::RelayConnect { url } => self.connect_relay_command(&url).await,
+            Command::RelayDisconnect => self.disconnect_relay_command(),
+            Command::RelayMode { mode } => self.set_relay_mode(mode),
             Command::MeshStatus => self.show_mesh_status(),
             Command::MeshClear => self.clear_mesh(),
             Command::History { room } => self.show_history(room.as_deref()),
@@ -197,11 +202,20 @@ impl Runtime {
                         .await;
                     return;
                 }
+                if let Some((node_id, callsign)) = self.resolve_relay_target(&target) {
+                    self.send_direct_message_to(node_id, callsign, body).await;
+                    return;
+                }
                 if kaya_shared::is_valid_node_id(&target) {
-                    self.send_route_request(&target).await;
-                    self.system_message(format!(
-                        "dm target not found locally: {target}; route request sent"
-                    ));
+                    if self.relay_tx.is_some() {
+                        self.send_direct_message_to(target.clone(), target.clone(), body)
+                            .await;
+                    } else {
+                        self.send_route_request(&target).await;
+                        self.system_message(format!(
+                            "dm target not found locally: {target}; route request sent"
+                        ));
+                    }
                 } else {
                     self.system_message(format!("dm target not found: {target}"));
                 }
@@ -234,11 +248,21 @@ impl Runtime {
                         .await;
                     return;
                 }
+                if let Some((node_id, callsign)) = self.resolve_relay_target(&target) {
+                    self.send_secure_direct_message_to(node_id, callsign, body)
+                        .await;
+                    return;
+                }
                 if kaya_shared::is_valid_node_id(&target) {
-                    self.send_route_request(&target).await;
-                    self.system_message(format!(
-                        "secure dm target not found locally: {target}; route request sent"
-                    ));
+                    if self.relay_tx.is_some() {
+                        self.send_secure_direct_message_to(target.clone(), target.clone(), body)
+                            .await;
+                    } else {
+                        self.send_route_request(&target).await;
+                        self.system_message(format!(
+                            "secure dm target not found locally: {target}; route request sent"
+                        ));
+                    }
                 } else {
                     self.system_message(format!("secure dm target not found: {target}"));
                 }
@@ -517,11 +541,13 @@ impl Runtime {
 
     fn show_status(&mut self) {
         self.system_message(format!(
-            "node={} room=#{} peers={} routes={} packets_tx={} packets_rx={} events={} secure_sessions={} profile={} demo={}",
+            "node={} room=#{} peers={} routes={} relay_connected={} relay_peers={} packets_tx={} packets_rx={} events={} secure_sessions={} profile={} demo={}",
             self.node_id,
             self.rooms.current_room(),
             self.peers.online_count(),
             self.mesh.table.len(),
+            self.relay_connected,
+            self.relay_peers.len(),
             self.ui_state.packets_tx,
             self.ui_state.packets_rx,
             self.diagnostics.counters.total(),
@@ -529,6 +555,87 @@ impl Runtime {
             self.profile.as_str(),
             self.demo_mode
         ));
+    }
+
+    fn show_relay_status(&mut self) {
+        let url = self.config.relay.url.clone().unwrap_or_else(|| "--".into());
+        let mode = if self.config.relay.rooms.bridge_local {
+            "local-first"
+        } else {
+            "relay-only"
+        };
+        self.system_message(format!(
+            "relay enabled={} connected={} peers={} url={} mode={}",
+            self.config.relay.enabled,
+            self.relay_connected,
+            self.relay_peers.len(),
+            url,
+            mode,
+        ));
+    }
+
+    fn show_relay_peers(&mut self) {
+        if self.relay_peers.is_empty() {
+            self.system_message("relay peers: none");
+            return;
+        }
+        let summary = self
+            .relay_peers
+            .values()
+            .take(8)
+            .map(|peer| format!("{} {}", peer.callsign, peer.node_id))
+            .collect::<Vec<_>>()
+            .join(" | ");
+        self.system_message(format!("relay peers: {summary}"));
+    }
+
+    async fn connect_relay_command(&mut self, url: &str) {
+        if !url.starts_with("tcp://") {
+            self.system_message("relay url must start with tcp://");
+            return;
+        }
+        self.config.relay.enabled = true;
+        self.config.relay.url = Some(url.to_string());
+        self.disconnect_relay_command();
+        if let Some(shutdown_tx) = &self.network_shutdown_tx {
+            self.connect_relay(shutdown_tx.subscribe()).await;
+        }
+    }
+
+    fn disconnect_relay_command(&mut self) {
+        if let Some(relay_tx) = &self.relay_tx {
+            let _ = relay_tx.send(Packet::relay_disconnect(
+                self.node_id.clone(),
+                self.callsign.clone(),
+                "operator disconnect",
+            ));
+        }
+        self.relay_tx = None;
+        self.relay_connected = false;
+        self.relay_peers.clear();
+        if let Some(task) = self.relay_task.take() {
+            task.abort();
+        }
+        self.system_message("relay disconnected");
+    }
+
+    fn set_relay_mode(&mut self, mode: Option<String>) {
+        match mode.as_deref() {
+            None => self.show_relay_status(),
+            Some("local-first") => {
+                self.config.relay.prefer_local = true;
+                self.config.relay.rooms.bridge_local = true;
+                self.system_message("relay mode set to local-first");
+            }
+            Some("relay-only") => {
+                self.config.relay.prefer_local = false;
+                self.config.relay.rooms.bridge_local = false;
+                self.system_message("relay mode set to relay-only");
+            }
+            Some(other) => self.system_message(format!(
+                "unknown relay mode {other}; use local-first or relay-only"
+            )),
+        }
     }
 
     fn show_about(&mut self) {

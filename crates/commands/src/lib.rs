@@ -45,6 +45,11 @@ pub enum Command {
     CloseSession { peer: String },
     Routes,
     Route { node_id: String },
+    RelayStatus,
+    RelayPeers,
+    RelayConnect { url: String },
+    RelayDisconnect,
+    RelayMode { mode: Option<String> },
     MeshStatus,
     MeshClear,
     History { room: Option<String> },
@@ -93,6 +98,11 @@ pub enum CommandKind {
     CloseSession,
     Routes,
     Route,
+    RelayStatus,
+    RelayPeers,
+    RelayConnect,
+    RelayDisconnect,
+    RelayMode,
     MeshStatus,
     MeshClear,
     History,
@@ -366,6 +376,41 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         description: "show best mesh route to a target",
     },
     CommandSpec {
+        kind: CommandKind::RelayStatus,
+        name: "relay-status",
+        aliases: &[],
+        usage: "/relay-status",
+        description: "show relay connection state and mode",
+    },
+    CommandSpec {
+        kind: CommandKind::RelayPeers,
+        name: "relay-peers",
+        aliases: &[],
+        usage: "/relay-peers",
+        description: "list peers announced by the relay",
+    },
+    CommandSpec {
+        kind: CommandKind::RelayConnect,
+        name: "relay-connect",
+        aliases: &[],
+        usage: "/relay-connect <tcp://host:port>",
+        description: "connect to a WAN relay without restarting the CLI",
+    },
+    CommandSpec {
+        kind: CommandKind::RelayDisconnect,
+        name: "relay-disconnect",
+        aliases: &[],
+        usage: "/relay-disconnect",
+        description: "disconnect from the active WAN relay",
+    },
+    CommandSpec {
+        kind: CommandKind::RelayMode,
+        name: "relay-mode",
+        aliases: &[],
+        usage: "/relay-mode [local-first|relay-only]",
+        description: "show or change relay room bridging mode",
+    },
+    CommandSpec {
         kind: CommandKind::MeshStatus,
         name: "mesh-status",
         aliases: &["mesh"],
@@ -578,6 +623,15 @@ impl CommandRegistry {
             CommandKind::Route => Ok(Command::Route {
                 node_id: parse_peer_arg(args, spec.usage)?.to_string(),
             }),
+            CommandKind::RelayStatus => Ok(Command::RelayStatus),
+            CommandKind::RelayPeers => Ok(Command::RelayPeers),
+            CommandKind::RelayConnect => Ok(Command::RelayConnect {
+                url: parse_peer_arg(args, spec.usage)?.to_string(),
+            }),
+            CommandKind::RelayDisconnect => Ok(Command::RelayDisconnect),
+            CommandKind::RelayMode => Ok(Command::RelayMode {
+                mode: first_arg(args).map(str::to_string),
+            }),
             CommandKind::MeshStatus => Ok(Command::MeshStatus),
             CommandKind::MeshClear => Ok(Command::MeshClear),
             CommandKind::History => Ok(Command::History {
@@ -777,6 +831,7 @@ mod tests {
         assert!(help.contains("/secure-msg <callsign|node-id> <message>"));
         assert!(help.contains("/send <callsign|node-id> <path>"));
         assert!(help.contains("/routes"));
+        assert!(help.contains("/relay-status"));
     }
 
     #[test]
@@ -850,6 +905,32 @@ mod tests {
         assert_eq!(
             registry.parse("/mesh-clear").unwrap(),
             ParsedInput::Command(Command::MeshClear)
+        );
+        assert_eq!(
+            registry.parse("/relay-status").unwrap(),
+            ParsedInput::Command(Command::RelayStatus)
+        );
+        assert_eq!(
+            registry.parse("/relay-peers").unwrap(),
+            ParsedInput::Command(Command::RelayPeers)
+        );
+        assert_eq!(
+            registry
+                .parse("/relay-connect tcp://relay.example:7777")
+                .unwrap(),
+            ParsedInput::Command(Command::RelayConnect {
+                url: "tcp://relay.example:7777".into()
+            })
+        );
+        assert_eq!(
+            registry.parse("/relay-disconnect").unwrap(),
+            ParsedInput::Command(Command::RelayDisconnect)
+        );
+        assert_eq!(
+            registry.parse("/relay-mode relay-only").unwrap(),
+            ParsedInput::Command(Command::RelayMode {
+                mode: Some("relay-only".into())
+            })
         );
     }
 

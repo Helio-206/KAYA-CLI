@@ -9,6 +9,7 @@ members = [
     "crates/peer",
     "crates/persistence",
     "crates/protocol",
+    "crates/relay",
     "crates/rooms",
     "crates/sdk",
     "crates/security",

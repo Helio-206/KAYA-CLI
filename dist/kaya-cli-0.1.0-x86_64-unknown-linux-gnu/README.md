@@ -4,18 +4,20 @@
 ![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
 ![Release](https://img.shields.io/badge/release-v0.1.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Offline First](https://img.shields.io/badge/offline--first-LAN--native-222222)
+![Offline First](https://img.shields.io/badge/offline--first-LAN--native%20%2B%20WAN--relay-222222)
 ![Terminal UI](https://img.shields.io/badge/terminal--ui-ratatui-5c7cfa)
 
-KAYA CLI is an offline-first, decentralized, terminal-based communication system for local networks. It is not just an "offline chat"; it is ephemeral social infrastructure built from physical proximity.
+KAYA CLI is an offline-first, decentralized, terminal-based communication system for local networks, with an optional WAN relay mode for peers that are not on the same LAN. It is not just an "offline chat"; it is ephemeral social infrastructure built from physical proximity.
 
-When multiple devices enter the same LAN, KAYA creates a temporary digital space where operators can discover nearby peers, join rooms, exchange public messages, send DMs, inspect presence, verify fingerprints, establish encrypted DM sessions, exchange files, relay encrypted DMs through an experimental local mesh, and keep working without internet, cloud, or a central server.
+When multiple devices enter the same LAN, KAYA creates a temporary digital space where operators can discover nearby peers, join rooms, exchange public messages, send DMs, inspect presence, verify fingerprints, establish encrypted DM sessions, exchange files, relay encrypted DMs through an experimental local mesh, and keep working without internet, cloud, or a central server. When operators are far apart, they can additionally point the CLI at a TCP relay without replacing the LAN path.
 
 ## Start Here
 
 - [Pitch](docs/PITCH.md)
 - [Technical Deep Dive](docs/TECHNICAL_DEEP_DIVE.md)
 - [Jury FAQ](docs/JURY_FAQ.md)
+- [WAN Relay Guide](docs/WAN_RELAY.md)
+- [Relay Security](docs/RELAY_SECURITY.md)
 - [Release Notes](RELEASE_NOTES.md)
 - [Public Roadmap](docs/ROADMAP_PUBLIC.md)
 
@@ -58,6 +60,7 @@ kaya-cli/
 │   ├── peer/         # presence, peer cache, timeouts
 │   ├── persistence/  # sled-backed local config/history/cache
 │   ├── protocol/     # packet schema, validation, JSON encode/decode
+│   ├── relay/        # optional TCP relay server and client
 │   ├── rooms/        # room membership and message routing
 │   ├── security/     # identity, signatures, trust, encrypted DMs
 │   ├── shared/       # constants, errors, node ids, utilities
@@ -137,8 +140,16 @@ cargo run -p kaya-app --bin kaya -- --profile lab --data-dir /tmp/kaya-lab-01
 - `--demo` starts an isolated presentation profile with a dedicated data directory and generated demo callsign.
 - `--profile <default|demo|lab|paranoid>` applies a runtime profile before startup.
 - `--data-dir <path>` overrides the profile directory explicitly.
+- `--relay <tcp://host:port>` connects the CLI to an optional WAN relay.
+- `--local` keeps room mirroring in local-first mode when relay is enabled.
 - `--version` prints the CLI version and exits.
 - `--about` prints a short product summary and exits.
+
+Relay server mode:
+
+```bash
+cargo run -p kaya-app --bin kaya -- relay --bind 0.0.0.0:7777
+```
 
 Configuration is stored as TOML:
 
@@ -169,6 +180,24 @@ allow_relay_for_blocked = false
 relay_encrypted_only = false
 route_expiry_seconds = 120
 max_seen_packets = 5000
+
+[relay]
+enabled = false
+url = "tcp://relay.example:7777"
+bind = "0.0.0.0:7777"
+prefer_local = true
+heartbeat_interval_ms = 5000
+connection_timeout_ms = 15000
+
+[relay.rooms]
+enabled = true
+broadcast = true
+bridge_local = true
+
+[relay.file_transfer]
+enabled = false
+allow_chunks = false
+max_file_size_mb = 20
 ```
 
 Identity is stored separately in `~/.kaya/identity.toml`. It contains the persistent node id plus Ed25519 and X25519 key material. Do not share this file.
@@ -201,6 +230,35 @@ KAYA callsign: Bruno
 > /secure-msg Helio teste privado cifrado
 > /send Helio ./docs/PROTOCOL.md
 > /routes
+```
+
+WAN relay example:
+
+Terminal A, host the relay:
+
+```bash
+cargo run -p kaya-app --bin kaya -- relay --bind 0.0.0.0:7777
+```
+
+Terminal B, home 1:
+
+```bash
+cargo run -p kaya-app --bin kaya -- --relay tcp://PUBLIC-IP:7777
+```
+
+Terminal C, home 2:
+
+```bash
+cargo run -p kaya-app --bin kaya -- --relay tcp://PUBLIC-IP:7777
+```
+
+Then inside the CLI:
+
+```text
+> /relay-status
+> /relay-peers
+> /msg KY-71AF92 teste por relay
+> /secure-msg Ana dm cifrada por relay
 ```
 
 ## Commands

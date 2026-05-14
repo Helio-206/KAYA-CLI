@@ -703,6 +703,7 @@ dependencies = [
  "kaya-peer",
  "kaya-persistence",
  "kaya-protocol",
+ "kaya-relay",
  "kaya-rooms",
  "kaya-security",
  "kaya-shared",
@@ -809,6 +810,21 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "uuid",
+]
+
+[[package]]
+name = "kaya-relay"
+version = "0.1.0"
+dependencies = [
+ "kaya-protocol",
+ "kaya-shared",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
  "uuid",
 ]
 

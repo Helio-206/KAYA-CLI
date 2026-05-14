@@ -35,10 +35,14 @@ install -m 0644 \
     docs/DEMO_MODE.md \
     docs/DISTRIBUTION.md \
     docs/INSTALLATION.md \
+    docs/NGROK.md \
     docs/RELEASE.md \
+    docs/RELAY_SECURITY.md \
     docs/SDK.md \
     docs/SECURITY.md \
     docs/VERSIONING.md \
+    docs/WAN_RELAY.md \
+    docs/FRIEND_QUICKSTART.md \
     RELEASE_NOTES.md \
     "${staging_dir}/docs/"
 install -m 0755 \
