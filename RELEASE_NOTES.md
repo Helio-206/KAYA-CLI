@@ -12,7 +12,7 @@ It provides:
 - trust fingerprints and blocked-peer handling
 - explicit file offers and local file transfer
 - experimental mesh relay for selected traffic
-- demo mode, packaging scripts, and presentation-ready documentation
+- demo mode, packaging scripts, presentation-ready documentation, and an embeddable Rust SDK layer
 
 ## Main Features
 
@@ -78,7 +78,30 @@ Package for distribution:
 
 ```bash
 ./scripts/package-release.sh
+./scripts/generate-checksums.sh
 ```
+
+Install from a published release:
+
+```bash
+curl -fsSL https://github.com/natanielmatondo/KAYA-CLI/releases/download/v0.1.0/install.sh | sh
+```
+
+Install from a downloaded archive:
+
+```bash
+tar -xzf kaya-cli-0.1.0-x86_64-unknown-linux-gnu.tar.gz
+sudo mv kaya-cli-0.1.0-x86_64-unknown-linux-gnu/bin/kaya /usr/local/bin/
+kaya --version
+```
+
+Developer SDK:
+
+```bash
+cargo add kaya-sdk
+```
+
+See [docs/SDK.md](docs/SDK.md) and [docs/INSTALLATION.md](docs/INSTALLATION.md) for the public API and install flow.
 
 ## Validation Passed
 

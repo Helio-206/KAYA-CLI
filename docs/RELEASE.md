@@ -33,6 +33,19 @@ The script:
 - copies the binary, core docs, and helper scripts
 - emits a `.tar.gz` archive for distribution
 
+Generate checksums after packaging:
+
+```bash
+./scripts/generate-checksums.sh
+```
+
+The release bundle now includes:
+
+- `bin/kaya`
+- installation scripts
+- installation, distribution, SDK, release, and versioning docs
+- `RELEASE_NOTES.md`
+
 ## Release Candidate Checklist
 
 - verify startup flags: `--demo`, `--profile`, `--data-dir`, `--version`, `--about`
@@ -41,6 +54,9 @@ The script:
 - verify the splash screen, command hints, empty states, and modal overlays in the TUI
 - verify secure session expiry, route timeout cleanup, and stale file-transfer expiry
 - verify the produced archive launches with `bin/kaya`
+- verify `./scripts/install-local.sh` installs the packaged binary cleanly
+- verify `./scripts/uninstall.sh` removes the binary cleanly
+- verify `dist/SHA256SUMS` matches the published artifacts
 
 ## Recommended Smoke Test
 

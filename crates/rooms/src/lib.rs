@@ -82,6 +82,10 @@ impl RoomStore {
         store
     }
 
+    pub fn set_own_callsign(&mut self, callsign: impl Into<String>) {
+        self.own_callsign = callsign.into();
+    }
+
     pub fn create(&mut self, room: &str) -> kaya_shared::Result<String> {
         let room = validate_room_name(room)?;
         self.rooms.entry(room.clone()).or_insert_with(|| Room {

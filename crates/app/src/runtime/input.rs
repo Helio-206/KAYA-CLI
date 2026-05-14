@@ -23,7 +23,8 @@ impl Runtime {
             Ok(ParsedInput::Command(command)) => self.handle_command(command).await,
             Err(err) => {
                 let message = err.to_string();
-                self.ui_state.push_log(format!("command rejected: {message}"));
+                self.ui_state
+                    .push_log(format!("command rejected: {message}"));
                 self.system_message(message);
                 Ok(false)
             }

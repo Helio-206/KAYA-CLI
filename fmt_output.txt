@@ -1,0 +1,1072 @@
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/app/src/runtime/input.rs:23:
+             Ok(ParsedInput::Command(command)) => self.handle_command(command).await,
+             Err(err) => {
+                 let message = err.to_string();
+[31m-                self.ui_state.push_log(format!("command rejected: {message}"));
+(B[m[32m+                self.ui_state
+(B[m[32m+                    .push_log(format!("command rejected: {message}"));
+(B[m                 self.system_message(message);
+                 Ok(false)
+             }
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/app/src/runtime.rs:162:
+     pub async fn run(&mut self) -> Result<()> {
+         let (shutdown_tx, shutdown_rx) = watch::channel(false);
+         self.network_shutdown_tx = Some(shutdown_tx);
+[31m-        self.network_task = Some(
+(B[m[31m-            self.spawn_network_reader(shutdown_rx, self.timeouts.network_recv_ms),
+(B[m[31m-        );
+(B[m[32m+        self.network_task =
+(B[m[32m+            Some(self.spawn_network_reader(shutdown_rx, self.timeouts.network_recv_ms));
+(B[m         self.bootstrap().await;
+ 
+         let mut ui = TerminalUi::enter()?;
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/app/src/runtime.rs:236:
+                 Ok(Ok(())) => {}
+                 Ok(Err(err)) if err.is_cancelled() => {}
+                 Ok(Err(err)) => {
+[31m-                    self.ui_state.push_log(format!("network task join failed: {err}"));
+(B[m[32m+                    self.ui_state
+(B[m[32m+                        .push_log(format!("network task join failed: {err}"));
+(B[m                 }
+                 Err(_) => {
+                     self.ui_state.push_log("network shutdown timed out");
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:21:
+ use kaya_rooms::{ChatMessage, RoomStore, RoomSummary, RouteOutcome};
+ use kaya_security::{
+     decode_hex, encode_hex, encrypted_payload_from_packet, packet_requires_signature_validation,
+[31m-    session_accept_from_packet, session_request_from_packet, sign_packet,
+(B[m[31m-    verify_packet_signature, EncryptedPayload, IdentityStore, LocalIdentity,
+(B[m[31m-    SecureSessionManager, SecureSessionView, SignatureStatus, TrustObservation, TrustStatus,
+(B[m[31m-    TrustStore,
+(B[m[32m+    session_accept_from_packet, session_request_from_packet, sign_packet, verify_packet_signature,
+(B[m[32m+    EncryptedPayload, IdentityStore, LocalIdentity, SecureSessionManager, SecureSessionView,
+(B[m[32m+    SignatureStatus, TrustObservation, TrustStatus, TrustStore,
+(B[m };
+ use kaya_shared::{is_valid_node_id, now_millis, KayaError, PresenceStatus, Result};
+ use kaya_transport::{MulticastTransport, PacketDeduplicator, TransportConfig};
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:273:
+         }
+     }
+ 
+[31m-    async fn bootstrap(&mut self, transport: &dyn KayaTransport, events: &broadcast::Sender<KayaEvent>) {
+(B[m[32m+    async fn bootstrap(
+(B[m[32m+        &mut self,
+(B[m[32m+        transport: &dyn KayaTransport,
+(B[m[32m+        events: &broadcast::Sender<KayaEvent>,
+(B[m[32m+    ) {
+(B[m         let event = if self.identity_created {
+             KayaEvent::IdentityCreated {
+                 node_id: self.node_id.clone(),
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:353:
+             ),
+         )
+         .await;
+[31m-        self.send_packet(transport, events, self.route_announce_packet()).await;
+(B[m[32m+        self.send_packet(transport, events, self.route_announce_packet())
+(B[m[32m+            .await;
+(B[m     }
+ 
+[31m-    async fn shutdown(&mut self, transport: &dyn KayaTransport, events: &broadcast::Sender<KayaEvent>) -> Result<()> {
+(B[m[31m-        self.send_packet(transport, events, self.leave_packet()).await;
+(B[m[32m+    async fn shutdown(
+(B[m[32m+        &mut self,
+(B[m[32m+        transport: &dyn KayaTransport,
+(B[m[32m+        events: &broadcast::Sender<KayaEvent>,
+(B[m[32m+    ) -> Result<()> {
+(B[m[32m+        self.send_packet(transport, events, self.leave_packet())
+(B[m[32m+            .await;
+(B[m         self.config.last_room = Some(self.rooms.current_room().to_string());
+         self.config_store.save(&self.config)?;
+         self.store.flush()?;
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:436:
+         }
+ 
+         let Some(route) = self.mesh.best_route(destination_node).cloned() else {
+[31m-            self.send_route_request(transport, events, destination_node).await;
+(B[m[32m+            self.send_route_request(transport, events, destination_node)
+(B[m[32m+                .await;
+(B[m             return;
+         };
+ 
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:443:
+[31m-        if self.trust_store.is_blocked(&route.next_hop) || self.trust_store.is_blocked(destination_node) {
+(B[m[32m+        if self.trust_store.is_blocked(&route.next_hop)
+(B[m[32m+            || self.trust_store.is_blocked(destination_node)
+(B[m[32m+        {
+(B[m             publish(
+                 events,
+                 KayaEvent::RelayDenied {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:463:
+             return;
+         }
+ 
+[31m-        let envelope = self.mesh.build_envelope(destination_node, &route.next_hop, packet);
+(B[m[32m+        let envelope = self
+(B[m[32m+            .mesh
+(B[m[32m+            .build_envelope(destination_node, &route.next_hop, packet);
+(B[m         let Ok(payload) = envelope.to_value() else {
+             publish(
+                 events,
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:501:
+         if self
+             .pending_route_requests
+             .get(destination_node)
+[31m-            .map(|requested_at| now.saturating_sub(*requested_at) < self.timeouts.route_discovery_ms)
+(B[m[32m+            .map(|requested_at| {
+(B[m[32m+                now.saturating_sub(*requested_at) < self.timeouts.route_discovery_ms
+(B[m[32m+            })
+(B[m             .unwrap_or(false)
+         {
+             return;
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:648:
+         self.send_packet(
+             transport,
+             events,
+[31m-            Packet::room_message(self.node_id.clone(), self.callsign.clone(), room, body.to_string()),
+(B[m[32m+            Packet::room_message(
+(B[m[32m+                self.node_id.clone(),
+(B[m[32m+                self.callsign.clone(),
+(B[m[32m+                room,
+(B[m[32m+                body.to_string(),
+(B[m[32m+            ),
+(B[m         )
+         .await;
+         Ok(())
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:663:
+     ) -> Result<()> {
+         let (target_node, target_callsign) = self.resolve_message_target(target)?;
+         if self.trust_store.is_blocked(&target_node) {
+[31m-            return Err(KayaError::Security(format!("dm target is blocked: {target_node}")));
+(B[m[32m+            return Err(KayaError::Security(format!(
+(B[m[32m+                "dm target is blocked: {target_node}"
+(B[m[32m+            )));
+(B[m         }
+ 
+         if self.sessions.has_active(&target_node) {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:670:
+             return self
+[31m-                .send_encrypted_message(transport, events, target_node, target_callsign, body.to_string())
+(B[m[32m+                .send_encrypted_message(
+(B[m[32m+                    transport,
+(B[m[32m+                    events,
+(B[m[32m+                    target_node,
+(B[m[32m+                    target_callsign,
+(B[m[32m+                    body.to_string(),
+(B[m[32m+                )
+(B[m                 .await;
+         }
+ 
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:724:
+ 
+         if self.sessions.has_active(&target_node) {
+             return self
+[31m-                .send_encrypted_message(transport, events, target_node, target_callsign, body.to_string())
+(B[m[32m+                .send_encrypted_message(
+(B[m[32m+                    transport,
+(B[m[32m+                    events,
+(B[m[32m+                    target_node,
+(B[m[32m+                    target_callsign,
+(B[m[32m+                    body.to_string(),
+(B[m[32m+                )
+(B[m                 .await;
+         }
+ 
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:823:
+         }
+         let (target_node, target_callsign) = self.resolve_message_target(target)?;
+         if self.trust_store.is_blocked(&target_node) {
+[31m-            return Err(KayaError::Security(format!("file target is blocked: {target_node}")));
+(B[m[32m+            return Err(KayaError::Security(format!(
+(B[m[32m+                "file target is blocked: {target_node}"
+(B[m[32m+            )));
+(B[m         }
+         let security = if self.sessions.has_active(&target_node) {
+             TransferSecurity::Encrypted
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:912:
+         match self.commands.parse(input)? {
+             ParsedInput::Empty => Ok(false),
+             ParsedInput::Message(body) => {
+[31m-                self.send_room_message(transport, events, None, &body).await?;
+(B[m[32m+                self.send_room_message(transport, events, None, &body)
+(B[m[32m+                    .await?;
+(B[m                 Ok(false)
+             }
+             ParsedInput::Command(command) => self.execute_command(transport, events, command).await,
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:930:
+                 self.join_room(transport, events, &room).await?;
+             }
+             Command::RoomMessage { body } => {
+[31m-                self.send_room_message(transport, events, None, &body).await?;
+(B[m[32m+                self.send_room_message(transport, events, None, &body)
+(B[m[32m+                    .await?;
+(B[m             }
+             Command::Msg { target, body } => {
+[31m-                self.send_direct_message(transport, events, &target, &body).await?;
+(B[m[32m+                self.send_direct_message(transport, events, &target, &body)
+(B[m[32m+                    .await?;
+(B[m             }
+             Command::SecureMsg { target, body } => {
+                 self.send_secure_direct_message(transport, events, &target, &body)
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:940:
+                     .await?;
+             }
+             Command::SendFile { target, path } => {
+[31m-                let _ = self.send_file_offer(transport, events, &target, path).await?;
+(B[m[32m+                let _ = self
+(B[m[32m+                    .send_file_offer(transport, events, &target, path)
+(B[m[32m+                    .await?;
+(B[m             }
+             Command::Trust { peer } => {
+[31m-                self.set_peer_trust(&peer, TrustStatus::Trusted, events).await?;
+(B[m[32m+                self.set_peer_trust(&peer, TrustStatus::Trusted, events)
+(B[m[32m+                    .await?;
+(B[m             }
+             Command::Untrust { peer } => {
+[31m-                self.set_peer_trust(&peer, TrustStatus::Unknown, events).await?;
+(B[m[32m+                self.set_peer_trust(&peer, TrustStatus::Unknown, events)
+(B[m[32m+                    .await?;
+(B[m             }
+             Command::Block { peer } => {
+[31m-                self.set_peer_trust(&peer, TrustStatus::Blocked, events).await?;
+(B[m[32m+                self.set_peer_trust(&peer, TrustStatus::Blocked, events)
+(B[m[32m+                    .await?;
+(B[m             }
+             Command::Presence { status } => {
+                 self.presence = status;
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1060:
+                 callsign,
+                 room,
+             } => {
+[31m-                if matches!(packet.packet_type, PacketType::Hello | PacketType::JoinRoom | PacketType::RoomJoin) {
+(B[m[32m+                if matches!(
+(B[m[32m+                    packet.packet_type,
+(B[m[32m+                    PacketType::Hello | PacketType::JoinRoom | PacketType::RoomJoin
+(B[m[32m+                ) {
+(B[m                     publish(
+                         events,
+                         KayaEvent::RoomJoined {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1119:
+                     return true;
+                 }
+                 let Ok(request) = session_request_from_packet(packet) else {
+[31m-                    self.security_warning(Some(packet.node_id.clone()), "malformed secure session request".into(), events);
+(B[m[32m+                    self.security_warning(
+(B[m[32m+                        Some(packet.node_id.clone()),
+(B[m[32m+                        "malformed secure session request".into(),
+(B[m[32m+                        events,
+(B[m[32m+                    );
+(B[m                     return true;
+                 };
+                 if !self.packet_fingerprint_matches(&packet.node_id, &request.fingerprint, events) {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1154:
+                         )
+                         .await;
+                     }
+[31m-                    Err(err) => self.security_warning(Some(packet.node_id.clone()), err.to_string(), events),
+(B[m[32m+                    Err(err) => {
+(B[m[32m+                        self.security_warning(Some(packet.node_id.clone()), err.to_string(), events)
+(B[m[32m+                    }
+(B[m                 }
+                 true
+             }
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1163:
+                     return true;
+                 }
+                 let Ok(accept) = session_accept_from_packet(packet) else {
+[31m-                    self.security_warning(Some(packet.node_id.clone()), "malformed secure session accept".into(), events);
+(B[m[32m+                    self.security_warning(
+(B[m[32m+                        Some(packet.node_id.clone()),
+(B[m[32m+                        "malformed secure session accept".into(),
+(B[m[32m+                        events,
+(B[m[32m+                    );
+(B[m                     return true;
+                 };
+                 if !self.packet_fingerprint_matches(&packet.node_id, &accept.fingerprint, events) {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1186:
+                         self.flush_pending_secure_messages(transport, events, &packet.node_id)
+                             .await;
+                     }
+[31m-                    Err(err) => self.security_warning(Some(packet.node_id.clone()), err.to_string(), events),
+(B[m[32m+                    Err(err) => {
+(B[m[32m+                        self.security_warning(Some(packet.node_id.clone()), err.to_string(), events)
+(B[m[32m+                    }
+(B[m                 }
+                 true
+             }
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1195:
+                     return true;
+                 }
+                 let Ok(payload) = encrypted_payload_from_packet(packet) else {
+[31m-                    self.security_warning(Some(packet.node_id.clone()), "malformed encrypted dm".into(), events);
+(B[m[32m+                    self.security_warning(
+(B[m[32m+                        Some(packet.node_id.clone()),
+(B[m[32m+                        "malformed encrypted dm".into(),
+(B[m[32m+                        events,
+(B[m[32m+                    );
+(B[m                     return true;
+                 };
+[31m-                if !self.packet_fingerprint_matches(&packet.node_id, &payload.sender_fingerprint, events) {
+(B[m[32m+                if !self.packet_fingerprint_matches(
+(B[m[32m+                    &packet.node_id,
+(B[m[32m+                    &payload.sender_fingerprint,
+(B[m[32m+                    events,
+(B[m[32m+                ) {
+(B[m                     return true;
+                 }
+                 match self.sessions.decrypt(&packet.node_id, &payload) {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1225:
+                             },
+                         );
+                     }
+[31m-                    Err(err) => self.security_warning(Some(packet.node_id.clone()), err.to_string(), events),
+(B[m[32m+                    Err(err) => {
+(B[m[32m+                        self.security_warning(Some(packet.node_id.clone()), err.to_string(), events)
+(B[m[32m+                    }
+(B[m                 }
+                 true
+             }
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1243:
+             PacketType::FileOffer => self.receive_file_offer(transport, events, packet).await,
+             PacketType::FileAccept => self.receive_file_accept(transport, events, packet).await,
+             PacketType::FileReject => self.receive_file_reject(events, packet),
+[31m-            PacketType::FileChunk => self.receive_file_chunk(transport, events, packet, false).await,
+(B[m[32m+            PacketType::FileChunk => {
+(B[m[32m+                self.receive_file_chunk(transport, events, packet, false)
+(B[m[32m+                    .await
+(B[m[32m+            }
+(B[m             PacketType::FileChunkEncrypted => {
+[31m-                self.receive_file_chunk(transport, events, packet, true).await
+(B[m[32m+                self.receive_file_chunk(transport, events, packet, true)
+(B[m[32m+                    .await
+(B[m             }
+             PacketType::FileChunkAck => self.receive_file_ack(events, packet),
+             PacketType::FileTransferComplete => self.receive_file_complete(events, packet),
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1273:
+                     self.node_id.clone(),
+                     self.callsign.clone(),
+                     packet.node_id.clone(),
+[31m-                    payload_str(packet, "file_id").unwrap_or("unknown").to_string(),
+(B[m[32m+                    payload_str(packet, "file_id")
+(B[m[32m+                        .unwrap_or("unknown")
+(B[m[32m+                        .to_string(),
+(B[m                     "file transfer disabled",
+                 ),
+                 &packet.node_id,
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1314:
+         };
+         let session = self
+             .files
+[31m-            .receive_offer(metadata, &packet.node_id, &packet.callsign, security, signed, trusted)
+(B[m[32m+            .receive_offer(
+(B[m[32m+                metadata,
+(B[m[32m+                &packet.node_id,
+(B[m[32m+                &packet.callsign,
+(B[m[32m+                security,
+(B[m[32m+                signed,
+(B[m[32m+                trusted,
+(B[m[32m+            )
+(B[m             .clone();
+         self.persist_file_session(&session.file_id, events);
+         publish(
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1419:
+                     match self.file_store.save_completed(&session, &bytes) {
+                         Ok(path) => {
+                             let path_string = path.display().to_string();
+[31m-                            let _ = self.files.mark_completed_path(&file_id, path_string.clone());
+(B[m[32m+                            let _ = self
+(B[m[32m+                                .files
+(B[m[32m+                                .mark_completed_path(&file_id, path_string.clone());
+(B[m                             self.persist_file_session(&file_id, events);
+                             publish(
+                                 events,
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1519:
+             .get("chunk_index")
+             .and_then(serde_json::Value::as_u64)
+             .unwrap_or_default() as u32;
+[31m-        publish(events, KayaEvent::FileChunkAcked { file_id, chunk_index });
+(B[m[32m+        publish(
+(B[m[32m+            events,
+(B[m[32m+            KayaEvent::FileChunkAcked {
+(B[m[32m+                file_id,
+(B[m[32m+                chunk_index,
+(B[m[32m+            },
+(B[m[32m+        );
+(B[m     }
+ 
+     fn receive_file_complete(&mut self, events: &broadcast::Sender<KayaEvent>, packet: &Packet) {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1530:
+             session.status = TransferStatus::Completed;
+         }
+         self.persist_file_session(&file_id, events);
+[31m-        publish(events, KayaEvent::FileTransferCompleted { file_id, path: None });
+(B[m[32m+        publish(
+(B[m[32m+            events,
+(B[m[32m+            KayaEvent::FileTransferCompleted {
+(B[m[32m+                file_id,
+(B[m[32m+                path: None,
+(B[m[32m+            },
+(B[m[32m+        );
+(B[m     }
+ 
+     fn receive_file_cancel(&mut self, events: &broadcast::Sender<KayaEvent>, packet: &Packet) {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1567:
+         file_id: &str,
+         peer_node_id: &str,
+     ) {
+[31m-        if self.peers.get(peer_node_id).map(|peer| !peer.online).unwrap_or(true) {
+(B[m[32m+        if self
+(B[m[32m+            .peers
+(B[m[32m+            .get(peer_node_id)
+(B[m[32m+            .map(|peer| !peer.online)
+(B[m[32m+            .unwrap_or(true)
+(B[m[32m+        {
+(B[m             let reason = "file chunks over mesh not enabled yet".to_string();
+             let _ = self.files.fail(file_id, reason.clone());
+             self.persist_file_session(file_id, events);
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1605:
+ 
+         for chunk in chunks {
+             if session.security == TransferSecurity::Encrypted {
+[31m-                match self.sessions.encrypt_file_chunk(peer_node_id, &chunk.payload) {
+(B[m[32m+                match self
+(B[m[32m+                    .sessions
+(B[m[32m+                    .encrypt_file_chunk(peer_node_id, &chunk.payload)
+(B[m[32m+                {
+(B[m                     Ok(payload) => {
+                         self.send_packet(
+                             transport,
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1630:
+                         .await;
+                     }
+                     Err(err) => {
+[31m-                        self.security_warning(Some(peer_node_id.to_string()), err.to_string(), events);
+(B[m[32m+                        self.security_warning(
+(B[m[32m+                            Some(peer_node_id.to_string()),
+(B[m[32m+                            err.to_string(),
+(B[m[32m+                            events,
+(B[m[32m+                        );
+(B[m                         return;
+                     }
+                 }
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1684:
+                 publish(
+                     events,
+                     KayaEvent::RouteError {
+[31m-                        destination_node: payload_str(packet, "destination_node").unwrap_or("--").to_string(),
+(B[m[31m-                        reason: payload_str(packet, "reason").unwrap_or("route error").to_string(),
+(B[m[32m+                        destination_node: payload_str(packet, "destination_node")
+(B[m[32m+                            .unwrap_or("--")
+(B[m[32m+                            .to_string(),
+(B[m[32m+                        reason: payload_str(packet, "reason")
+(B[m[32m+                            .unwrap_or("route error")
+(B[m[32m+                            .to_string(),
+(B[m                     },
+                 );
+                 true
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1716:
+         if !self.mesh.policy.enabled || self.trust_store.is_blocked(&packet.node_id) {
+             return;
+         }
+[31m-        let Some(routes) = packet.payload.get("routes").and_then(serde_json::Value::as_array) else {
+(B[m[32m+        let Some(routes) = packet
+(B[m[32m+            .payload
+(B[m[32m+            .get("routes")
+(B[m[32m+            .and_then(serde_json::Value::as_array)
+(B[m[32m+        else {
+(B[m             return;
+         };
+         for route in routes {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1723:
+[31m-            let Ok(descriptor) = serde_json::from_value::<RouteDescriptorPayload>(route.clone()) else {
+(B[m[32m+            let Ok(descriptor) = serde_json::from_value::<RouteDescriptorPayload>(route.clone())
+(B[m[32m+            else {
+(B[m                 continue;
+             };
+[31m-            if descriptor.destination_node == self.node_id || descriptor.destination_node == packet.node_id {
+(B[m[32m+            if descriptor.destination_node == self.node_id
+(B[m[32m+                || descriptor.destination_node == packet.node_id
+(B[m[32m+            {
+(B[m                 continue;
+             }
+             if self.trust_store.is_blocked(&descriptor.destination_node) {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1737:
+                 trusted: descriptor.trusted,
+                 encrypted_capable: descriptor.encrypted_capable,
+                 source: RouteSource::Announce,
+[31m-                latency_ms: self.peers.get(&packet.node_id).and_then(|peer| peer.latency_ms),
+(B[m[32m+                latency_ms: self
+(B[m[32m+                    .peers
+(B[m[32m+                    .get(&packet.node_id)
+(B[m[32m+                    .and_then(|peer| peer.latency_ms),
+(B[m             });
+             self.observe_route_entry(entry, events);
+         }
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1752:
+         if !self.mesh.policy.enabled {
+             return;
+         }
+[31m-        let Some(destination_node) = payload_str(packet, "destination_node").map(str::to_string) else {
+(B[m[32m+        let Some(destination_node) = payload_str(packet, "destination_node").map(str::to_string)
+(B[m[32m+        else {
+(B[m             return;
+         };
+         let Some(request_id) = payload_str(packet, "request_id").map(str::to_string) else {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1826:
+         if !self.packet_targets_local_node(packet) || self.trust_store.is_blocked(&packet.node_id) {
+             return;
+         }
+[31m-        let Ok(response) = serde_json::from_value::<RouteResponsePayload>(packet.payload.clone()) else {
+(B[m[32m+        let Ok(response) = serde_json::from_value::<RouteResponsePayload>(packet.payload.clone())
+(B[m[32m+        else {
+(B[m             return;
+         };
+         if response.destination_node == self.node_id {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1833:
+             return;
+         }
+[31m-        self.pending_route_requests.remove(&response.destination_node);
+(B[m[32m+        self.pending_route_requests
+(B[m[32m+            .remove(&response.destination_node);
+(B[m         let entry = RouteEntry::from_spec(RouteEntrySpec {
+             destination_node: response.destination_node.clone(),
+             destination_callsign: response.destination_callsign,
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1841:
+             trusted: response.trusted,
+             encrypted_capable: response.encrypted_capable,
+             source: RouteSource::Response,
+[31m-            latency_ms: self.peers.get(&packet.node_id).and_then(|peer| peer.latency_ms),
+(B[m[32m+            latency_ms: self
+(B[m[32m+                .peers
+(B[m[32m+                .get(&packet.node_id)
+(B[m[32m+                .and_then(|peer| peer.latency_ms),
+(B[m         });
+         self.observe_route_entry(entry, events);
+         publish(
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1910:
+             &self.node_id,
+             &self.mesh.policy,
+             self.trust_store.is_blocked(&packet.node_id),
+[31m-            self.mesh.best_route(&envelope.destination_node).map(|route| route.next_hop.as_str()),
+(B[m[32m+            self.mesh
+(B[m[32m+                .best_route(&envelope.destination_node)
+(B[m[32m+                .map(|route| route.next_hop.as_str()),
+(B[m         );
+         match decision {
+             RelayDecision::Drop(reason) => self.drop_mesh_packet(events, &envelope, reason),
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1980:
+         previous_hop: &str,
+         events: &broadcast::Sender<KayaEvent>,
+     ) {
+[31m-        if envelope.source_node == self.node_id || self.trust_store.is_blocked(&envelope.source_node) {
+(B[m[32m+        if envelope.source_node == self.node_id
+(B[m[32m+            || self.trust_store.is_blocked(&envelope.source_node)
+(B[m[32m+        {
+(B[m             return;
+         }
+         let entry = RouteEntry::from_spec(RouteEntrySpec {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:1991:
+             trusted: self.trust_store.status(&envelope.source_node) == TrustStatus::Trusted,
+             encrypted_capable: matches!(
+                 envelope.inner_packet.packet_type,
+[31m-                PacketType::DirectMessageEncrypted | PacketType::DmSessionRequest | PacketType::DmSessionAccept
+(B[m[32m+                PacketType::DirectMessageEncrypted
+(B[m[32m+                    | PacketType::DmSessionRequest
+(B[m[32m+                    | PacketType::DmSessionAccept
+(B[m             ),
+             source: RouteSource::RelayTrace,
+[31m-            latency_ms: self.peers.get(previous_hop).and_then(|peer| peer.latency_ms),
+(B[m[32m+            latency_ms: self
+(B[m[32m+                .peers
+(B[m[32m+                .get(previous_hop)
+(B[m[32m+                .and_then(|peer| peer.latency_ms),
+(B[m         });
+         self.observe_route_entry(entry, events);
+     }
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2021:
+                     events,
+                     KayaEvent::PeerDiscovered {
+                         node_id: node_id.clone(),
+[31m-                        callsign: self.peers.get(&node_id).map(|peer| peer.callsign.clone()).unwrap_or_default(),
+(B[m[32m+                        callsign: self
+(B[m[32m+                            .peers
+(B[m[32m+                            .get(&node_id)
+(B[m[32m+                            .map(|peer| peer.callsign.clone())
+(B[m[32m+                            .unwrap_or_default(),
+(B[m                     },
+                 ),
+                 kaya_peer::PeerEvent::TimedOut(node_id) => {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2028:
+                     publish(events, KayaEvent::PeerTimedOut { node_id });
+                 }
+                 kaya_peer::PeerEvent::Left(node_id) => {
+[31m-                    publish(events, KayaEvent::RoomLeft { node_id, room: None });
+(B[m[32m+                    publish(
+(B[m[32m+                        events,
+(B[m[32m+                        KayaEvent::RoomLeft {
+(B[m[32m+                            node_id,
+(B[m[32m+                            room: None,
+(B[m[32m+                        },
+(B[m[32m+                    );
+(B[m                 }
+                 kaya_peer::PeerEvent::PresenceChanged(node_id, presence) => publish(
+                     events,
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2035:
+                     KayaEvent::PresenceUpdated {
+                         node_id: node_id.clone(),
+[31m-                        callsign: self.peers.get(&node_id).map(|peer| peer.callsign.clone()).unwrap_or_default(),
+(B[m[32m+                        callsign: self
+(B[m[32m+                            .peers
+(B[m[32m+                            .get(&node_id)
+(B[m[32m+                            .map(|peer| peer.callsign.clone())
+(B[m[32m+                            .unwrap_or_default(),
+(B[m                         presence,
+                     },
+                 ),
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2050:
+         }
+         let trusted = self.trust_store.status(&packet.node_id) == TrustStatus::Trusted;
+         let encrypted_capable = self.sessions.has_active(&packet.node_id);
+[31m-        let latency_ms = self.peers.get(&packet.node_id).and_then(|peer| peer.latency_ms);
+(B[m[32m+        let latency_ms = self
+(B[m[32m+            .peers
+(B[m[32m+            .get(&packet.node_id)
+(B[m[32m+            .and_then(|peer| peer.latency_ms);
+(B[m         self.mesh.observe_direct_peer(
+             &packet.node_id,
+             &packet.callsign,
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2064:
+         let peer = KnownPeer {
+             node_id: packet.node_id.clone(),
+             callsign: packet.callsign.clone(),
+[31m-            fingerprint: self.trust_store.get(&packet.node_id).map(|peer| peer.fingerprint.clone()),
+(B[m[32m+            fingerprint: self
+(B[m[32m+                .trust_store
+(B[m[32m+                .get(&packet.node_id)
+(B[m[32m+                .map(|peer| peer.fingerprint.clone()),
+(B[m             last_seen: packet.timestamp.clone(),
+         };
+         if let Err(err) = self.store.remember_peer(&peer) {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2084:
+         events: &broadcast::Sender<KayaEvent>,
+     ) -> bool {
+         if self.trust_store.is_blocked(&packet.node_id) {
+[31m-            self.security_warning(Some(packet.node_id.clone()), "blocked peer packet rejected".into(), events);
+(B[m[32m+            self.security_warning(
+(B[m[32m+                Some(packet.node_id.clone()),
+(B[m[32m+                "blocked peer packet rejected".into(),
+(B[m[32m+                events,
+(B[m[32m+            );
+(B[m             return false;
+         }
+ 
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2097:
+                         fingerprint: fingerprint.clone(),
+                     },
+                 );
+[31m-                match self.trust_store.record_seen(&packet.node_id, &packet.callsign, &fingerprint) {
+(B[m[31m-                    Ok(TrustObservation::FingerprintChanged { previous, current }) => self.security_warning(
+(B[m[31m-                        Some(packet.node_id.clone()),
+(B[m[31m-                        format!("fingerprint changed {previous} -> {current}"),
+(B[m[31m-                        events,
+(B[m[31m-                    ),
+(B[m[32m+                match self
+(B[m[32m+                    .trust_store
+(B[m[32m+                    .record_seen(&packet.node_id, &packet.callsign, &fingerprint)
+(B[m[32m+                {
+(B[m[32m+                    Ok(TrustObservation::FingerprintChanged { previous, current }) => self
+(B[m[32m+                        .security_warning(
+(B[m[32m+                            Some(packet.node_id.clone()),
+(B[m[32m+                            format!("fingerprint changed {previous} -> {current}"),
+(B[m[32m+                            events,
+(B[m[32m+                        ),
+(B[m                     Ok(TrustObservation::New | TrustObservation::Updated) => {}
+[31m-                    Err(err) => self.security_warning(Some(packet.node_id.clone()), err.to_string(), events),
+(B[m[32m+                    Err(err) => {
+(B[m[32m+                        self.security_warning(Some(packet.node_id.clone()), err.to_string(), events)
+(B[m[32m+                    }
+(B[m                 }
+                 true
+             }
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2111:
+             SignatureStatus::Missing if secure_packet_requires_signature(packet.packet_type) => {
+[31m-                self.security_warning(Some(packet.node_id.clone()), "unsigned secure packet rejected".into(), events);
+(B[m[32m+                self.security_warning(
+(B[m[32m+                    Some(packet.node_id.clone()),
+(B[m[32m+                    "unsigned secure packet rejected".into(),
+(B[m[32m+                    events,
+(B[m[32m+                );
+(B[m                 false
+             }
+             SignatureStatus::Missing => true,
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2145:
+         let target_callsign = self
+             .resolve_mesh_target(peer_node_id)
+             .map(|target| target.1)
+[31m-            .or_else(|| self.peers.get(peer_node_id).map(|peer| peer.callsign.clone()))
+(B[m[32m+            .or_else(|| {
+(B[m[32m+                self.peers
+(B[m[32m+                    .get(peer_node_id)
+(B[m[32m+                    .map(|peer| peer.callsign.clone())
+(B[m[32m+            })
+(B[m             .unwrap_or_else(|| peer_node_id.to_string());
+         if let Some(queued) = self.pending_secure_messages.remove(peer_node_id) {
+             for message in queued.messages {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2207:
+                 .table
+                 .entries()
+                 .into_iter()
+[31m-                .filter(|route| route.destination_node != self.node_id && !self.trust_store.is_blocked(&route.destination_node))
+(B[m[32m+                .filter(|route| {
+(B[m[32m+                    route.destination_node != self.node_id
+(B[m[32m+                        && !self.trust_store.is_blocked(&route.destination_node)
+(B[m[32m+                })
+(B[m                 .map(|route| RouteDescriptorPayload {
+                     destination_node: route.destination_node,
+                     destination_callsign: route.destination_callsign,
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2272:
+                 } else if is_valid_node_id(&target) {
+                     Ok((target.clone(), target))
+                 } else {
+[31m-                    Err(KayaError::InvalidCommand(format!("target not found: {target}")))
+(B[m[32m+                    Err(KayaError::InvalidCommand(format!(
+(B[m[32m+                        "target not found: {target}"
+(B[m[32m+                    )))
+(B[m                 }
+             }
+[31m-            TargetResolution::DuplicateCallsign { callsign, matches } => Err(KayaError::InvalidCommand(
+(B[m[31m-                format!("callsign {callsign} is ambiguous: {}", matches.join(", ")),
+(B[m[31m-            )),
+(B[m[32m+            TargetResolution::DuplicateCallsign { callsign, matches } => {
+(B[m[32m+                Err(KayaError::InvalidCommand(format!(
+(B[m[32m+                    "callsign {callsign} is ambiguous: {}",
+(B[m[32m+                    matches.join(", ")
+(B[m[32m+                )))
+(B[m[32m+            }
+(B[m         }
+     }
+ 
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2285:
+         let route = self.mesh.best_route(target)?;
+         Some((
+             route.destination_node.clone(),
+[31m-            route.destination_callsign.clone().unwrap_or_else(|| route.destination_node.clone()),
+(B[m[32m+            route
+(B[m[32m+                .destination_callsign
+(B[m[32m+                .clone()
+(B[m[32m+                .unwrap_or_else(|| route.destination_node.clone()),
+(B[m         ))
+     }
+ 
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2292:
+     fn direct_peer_online(&self, node_id: &str) -> bool {
+[31m-        self.peers.get(node_id).map(|peer| peer.online).unwrap_or(false)
+(B[m[32m+        self.peers
+(B[m[32m+            .get(node_id)
+(B[m[32m+            .map(|peer| peer.online)
+(B[m[32m+            .unwrap_or(false)
+(B[m     }
+ 
+     fn packet_targets_local_node(&self, packet: &Packet) -> bool {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2325:
+         matches
+     }
+ 
+[31m-    fn publish_room_message(&mut self, message: ChatMessage, events: &broadcast::Sender<KayaEvent>) {
+(B[m[32m+    fn publish_room_message(
+(B[m[32m+        &mut self,
+(B[m[32m+        message: ChatMessage,
+(B[m[32m+        events: &broadcast::Sender<KayaEvent>,
+(B[m[32m+    ) {
+(B[m         let Some(room) = message.room.clone() else {
+             return;
+         };
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2344:
+         }
+     }
+ 
+[31m-    fn persist_chat_message(&mut self, message: &ChatMessage, events: &broadcast::Sender<KayaEvent>) {
+(B[m[32m+    fn persist_chat_message(
+(B[m[32m+        &mut self,
+(B[m[32m+        message: &ChatMessage,
+(B[m[32m+        events: &broadcast::Sender<KayaEvent>,
+(B[m[32m+    ) {
+(B[m         let record = kaya_persistence::HistoryRecord {
+             timestamp: now_millis().to_string(),
+             room: message.room.clone(),
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2414:
+                     events,
+                     KayaEvent::PresenceUpdated {
+                         node_id: node_id.clone(),
+[31m-                        callsign: self.peers.get(&node_id).map(|peer| peer.callsign.clone()).unwrap_or_default(),
+(B[m[32m+                        callsign: self
+(B[m[32m+                            .peers
+(B[m[32m+                            .get(&node_id)
+(B[m[32m+                            .map(|peer| peer.callsign.clone())
+(B[m[32m+                            .unwrap_or_default(),
+(B[m                         presence,
+                     },
+                 ),
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2421:
+[31m-                kaya_peer::PeerEvent::Discovered(_) | kaya_peer::PeerEvent::Left(_) | kaya_peer::PeerEvent::Updated(_) => {}
+(B[m[32m+                kaya_peer::PeerEvent::Discovered(_)
+(B[m[32m+                | kaya_peer::PeerEvent::Left(_)
+(B[m[32m+                | kaya_peer::PeerEvent::Updated(_) => {}
+(B[m             }
+         }
+ 
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2465:
+             );
+             let _ = self.files.fail(&file_id, reason.clone());
+             self.persist_file_session(&file_id, events);
+[31m-            publish(
+(B[m[31m-                events,
+(B[m[31m-                KayaEvent::FileTransferFailed {
+(B[m[31m-                    file_id,
+(B[m[31m-                    reason,
+(B[m[31m-                },
+(B[m[31m-            );
+(B[m[32m+            publish(events, KayaEvent::FileTransferFailed { file_id, reason });
+(B[m         }
+     }
+ 
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2482:
+     ) -> Result<FileChunk> {
+         let payload: FileEncryptedChunkPayload = serde_json::from_value(packet.payload.clone())?;
+         if !self.packet_fingerprint_matches(&packet.node_id, &payload.sender_fingerprint, events) {
+[31m-            return Err(KayaError::Security("file chunk fingerprint mismatch".into()));
+(B[m[32m+            return Err(KayaError::Security(
+(B[m[32m+                "file chunk fingerprint mismatch".into(),
+(B[m[32m+            ));
+(B[m         }
+         let bytes = self.sessions.decrypt_file_chunk(
+             &packet.node_id,
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2659:
+     pub async fn send_direct_message(&self, target: &str, body: &str) -> Result<()> {
+         let mut state = self.inner.state.lock().await;
+         state
+[31m-            .send_direct_message(self.inner.transport.as_ref(), &self.inner.events, target, body)
+(B[m[32m+            .send_direct_message(
+(B[m[32m+                self.inner.transport.as_ref(),
+(B[m[32m+                &self.inner.events,
+(B[m[32m+                target,
+(B[m[32m+                body,
+(B[m[32m+            )
+(B[m             .await
+     }
+ 
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2678:
+     pub async fn send_file(&self, target: &str, path: impl Into<PathBuf>) -> Result<String> {
+         let mut state = self.inner.state.lock().await;
+         state
+[31m-            .send_file_offer(self.inner.transport.as_ref(), &self.inner.events, target, path)
+(B[m[32m+            .send_file_offer(
+(B[m[32m+                self.inner.transport.as_ref(),
+(B[m[32m+                &self.inner.events,
+(B[m[32m+                target,
+(B[m[32m+                path,
+(B[m[32m+            )
+(B[m             .await
+     }
+ 
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2740:
+     }
+ 
+     pub async fn current_room(&self) -> String {
+[31m-        self.inner.state.lock().await.rooms.current_room().to_string()
+(B[m[32m+        self.inner
+(B[m[32m+            .state
+(B[m[32m+            .lock()
+(B[m[32m+            .await
+(B[m[32m+            .rooms
+(B[m[32m+            .current_room()
+(B[m[32m+            .to_string()
+(B[m     }
+ 
+     pub async fn trust_list(&self) -> Vec<kaya_security::TrustedPeer> {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2759:
+         let _ = self.inner.shutdown_tx.send(true);
+         {
+             let mut state = self.inner.state.lock().await;
+[31m-            state.shutdown(self.inner.transport.as_ref(), &self.inner.events).await?;
+(B[m[32m+            state
+(B[m[32m+                .shutdown(self.inner.transport.as_ref(), &self.inner.events)
+(B[m[32m+                .await?;
+(B[m         }
+         if let Some(task) = self.inner.network_task.lock().await.take() {
+             let _ = task.await;
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2907:
+ }
+ 
+ fn payload_str<'a>(packet: &'a Packet, field: &str) -> Option<&'a str> {
+[31m-    packet.payload.get(field).and_then(serde_json::Value::as_str)
+(B[m[32m+    packet
+(B[m[32m+        .payload
+(B[m[32m+        .get(field)
+(B[m[32m+        .and_then(serde_json::Value::as_str)
+(B[m }
+ 
+ fn publish(events: &broadcast::Sender<KayaEvent>, event: KayaEvent) {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/core/src/lib.rs:2943:
+         core.stop().await.unwrap();
+     }
+ }
+[32m+
+(B[mDiff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/sdk/src/lib.rs:144:
+         self.core.stop().await
+     }
+ }
+[32m+
+(B[mDiff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/sdk/tests/sdk.rs:55:
+     let (client, handle, _temp) = test_client().await;
+     let mut events = client.subscribe_events();
+ 
+[31m-    handle.inject(Packet::hello("KY-71AF92", "Ana", "geral")).unwrap();
+(B[m[32m+    handle
+(B[m[32m+        .inject(Packet::hello("KY-71AF92", "Ana", "geral"))
+(B[m[32m+        .unwrap();
+(B[m 
+     let event = timeout(Duration::from_secs(1), async {
+         loop {
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/sdk/tests/sdk.rs:82:
+     client.join_room("dev").await.unwrap();
+ 
+     assert_eq!(client.current_room().await, "dev");
+[31m-    assert!(client.list_rooms().await.iter().any(|room| room.name == "dev" && room.local_joined));
+(B[m[31m-    let packet = timeout(Duration::from_secs(1), handle.next_sent()).await.unwrap().unwrap();
+(B[m[32m+    assert!(client
+(B[m[32m+        .list_rooms()
+(B[m[32m+        .await
+(B[m[32m+        .iter()
+(B[m[32m+        .any(|room| room.name == "dev" && room.local_joined));
+(B[m[32m+    let packet = timeout(Duration::from_secs(1), handle.next_sent())
+(B[m[32m+        .await
+(B[m[32m+        .unwrap()
+(B[m[32m+        .unwrap();
+(B[m     assert_eq!(packet.packet_type, PacketType::RoomJoin);
+ 
+     client.stop().await.unwrap();
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/sdk/tests/sdk.rs:94:
+     let (client, handle, _temp) = test_client().await;
+     drain_sent(&handle).await;
+ 
+[31m-    client.send_room_message("geral", "hello offline").await.unwrap();
+(B[m[32m+    client
+(B[m[32m+        .send_room_message("geral", "hello offline")
+(B[m[32m+        .await
+(B[m[32m+        .unwrap();
+(B[m 
+[31m-    let packet = timeout(Duration::from_secs(1), handle.next_sent()).await.unwrap().unwrap();
+(B[m[32m+    let packet = timeout(Duration::from_secs(1), handle.next_sent())
+(B[m[32m+        .await
+(B[m[32m+        .unwrap()
+(B[m[32m+        .unwrap();
+(B[m     assert_eq!(packet.packet_type, PacketType::RoomMessage);
+     assert_eq!(packet.body(), Some("hello offline"));
+ 
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/sdk/tests/sdk.rs:106:
+ #[tokio::test]
+ async fn peer_listing_updates_from_mock_transport() {
+     let (client, handle, _temp) = test_client().await;
+[31m-    handle.inject(Packet::hello("KY-71AF92", "Ana", "geral")).unwrap();
+(B[m[32m+    handle
+(B[m[32m+        .inject(Packet::hello("KY-71AF92", "Ana", "geral"))
+(B[m[32m+        .unwrap();
+(B[m 
+     let peer = wait_for_peer(&client, "Ana").await;
+ 
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/sdk/tests/sdk.rs:119:
+ async fn mock_transport_captures_startup_packets() {
+     let (client, handle, _temp) = test_client().await;
+ 
+[31m-    let packet = timeout(Duration::from_secs(1), handle.next_sent()).await.unwrap().unwrap();
+(B[m[32m+    let packet = timeout(Duration::from_secs(1), handle.next_sent())
+(B[m[32m+        .await
+(B[m[32m+        .unwrap()
+(B[m[32m+        .unwrap();
+(B[m     assert_eq!(packet.packet_type, PacketType::Hello);
+ 
+     client.stop().await.unwrap();
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/sdk/tests/sdk.rs:128:
+ #[tokio::test]
+ async fn stop_node_is_clean_after_activity() {
+     let (client, handle, _temp) = test_client().await;
+[31m-    handle.inject(Packet::hello("KY-71AF92", "Ana", "geral")).unwrap();
+(B[m[32m+    handle
+(B[m[32m+        .inject(Packet::hello("KY-71AF92", "Ana", "geral"))
+(B[m[32m+        .unwrap();
+(B[m     let _ = wait_for_peer(&client, "Ana").await;
+     client.send_room_message("geral", "bye").await.unwrap();
+ 
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/sdk/tests/sdk.rs:135:
+     client.stop().await.unwrap();
+ }
+[32m+
+(B[mDiff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/crates/ui/src/render.rs:559:
+ 
+     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), inner);
+ 
+[31m-    let cursor_x = inner
+(B[m[31m-        .x
+(B[m[31m-        .saturating_add(2)
+(B[m[31m-        .saturating_add(state.input.chars().count().min(inner.width.saturating_sub(3) as usize) as u16);
+(B[m[32m+    let cursor_x = inner.x.saturating_add(2).saturating_add(
+(B[m[32m+        state
+(B[m[32m+            .input
+(B[m[32m+            .chars()
+(B[m[32m+            .count()
+(B[m[32m+            .min(inner.width.saturating_sub(3) as usize) as u16,
+(B[m[32m+    );
+(B[m     let cursor_y = inner.y;
+     frame.set_cursor_position((cursor_x, cursor_y));
+ }
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/examples/file-sender.rs:14:
+     client.stop().await?;
+     Ok(())
+ }
+[32m+
+(B[mDiff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/examples/mesh-status.rs:13:
+ 
+     let routes = client.inspect_routes().await;
+     let diagnostics = client.mesh_status().await;
+[31m-    println!("routes={} relayed={} delivered={} dropped={}", routes.len(), diagnostics.relayed_packets, diagnostics.delivered_packets, diagnostics.dropped_packets);
+(B[m[32m+    println!(
+(B[m[32m+        "routes={} relayed={} delivered={} dropped={}",
+(B[m[32m+        routes.len(),
+(B[m[32m+        diagnostics.relayed_packets,
+(B[m[32m+        diagnostics.delivered_packets,
+(B[m[32m+        diagnostics.dropped_packets
+(B[m[32m+    );
+(B[m     for route in routes {
+         println!(
+             "{} via {} hops={} score={}",
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/examples/mesh-status.rs:24:
+     client.stop().await?;
+     Ok(())
+ }
+[32m+
+(B[mDiff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/examples/room-bot.rs:27:
+         }
+     }
+ }
+[32m+
+(B[mDiff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/examples/secure-dm.rs:13:
+     client.stop().await?;
+     Ok(())
+ }
+[32m+
+(B[mDiff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/examples/simple-node.rs:9:
+     client.join_room("geral").await?;
+     client.send_room_message("geral", "hello offline").await?;
+ 
+[31m-    println!("node={} room={}", client.node_id().await, client.current_room().await);
+(B[m[32m+    println!(
+(B[m[32m+        "node={} room={}",
+(B[m[32m+        client.node_id().await,
+(B[m[32m+        client.current_room().await
+(B[m[32m+    );
+(B[m     client.stop().await?;
+     Ok(())
+ }
+Diff in /home/helio/HEr/KAYA-CLI/KAYA-CLI/examples/simple-node.rs:16:
+[32m+
+(B[m

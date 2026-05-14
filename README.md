@@ -71,6 +71,32 @@ kaya-cli/
 
 ## Install
 
+### Installation without cloning
+
+Linux x86_64 release install:
+
+```bash
+curl -fsSL https://github.com/natanielmatondo/KAYA-CLI/releases/download/v0.1.0/install.sh | sh
+```
+
+Manual archive install:
+
+```bash
+tar -xzf kaya-cli-0.1.0-x86_64-unknown-linux-gnu.tar.gz
+sudo mv kaya-cli-0.1.0-x86_64-unknown-linux-gnu/bin/kaya /usr/local/bin/
+kaya --version
+```
+
+Local repo install without cloning a second time:
+
+```bash
+./scripts/install-local.sh
+```
+
+See [Installation](docs/INSTALLATION.md) and [Distribution](docs/DISTRIBUTION.md) for the release layout, checksums, and uninstall flow.
+
+### Build from source
+
 Requirements:
 
 - Rust stable toolchain
@@ -255,6 +281,43 @@ Build a release archive with:
 
 ```bash
 ./scripts/package-release.sh
+./scripts/generate-checksums.sh
+```
+
+## Developer SDK usage
+
+KAYA now exposes a stable Rust SDK surface through `kaya-sdk`.
+
+```rust
+use kaya_sdk::{KayaClient, KayaConfig};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+	let client = KayaClient::new(KayaConfig::default()).await?;
+
+	client.set_callsign("Helio").await?;
+	client.join_room("geral").await?;
+	client.send_room_message("geral", "hello offline").await?;
+	client.stop().await?;
+	Ok(())
+}
+```
+
+The SDK hides transport, protocol, UI, and mesh internals behind `KayaClient` while still exposing event subscription, peer listing, room control, secure DM, file sending, trust management, and route inspection.
+
+Start here:
+
+- [SDK](docs/SDK.md)
+- [Embedding](docs/EMBEDDING.md)
+- [Versioning](docs/VERSIONING.md)
+- [Daemon Design](docs/DAEMON.md)
+
+Run the examples with:
+
+```bash
+cargo run -p kaya-sdk --example simple-node
+cargo run -p kaya-sdk --example room-bot -- geral
+cargo run -p kaya-sdk --example secure-dm -- KY-REPLACE "hello secure offline"
 ```
 
 ## Presentation Kit
@@ -290,8 +353,14 @@ cargo test
 - [Technical Deep Dive](docs/TECHNICAL_DEEP_DIVE.md)
 - [Jury FAQ](docs/JURY_FAQ.md)
 - [Demo Mode](docs/DEMO_MODE.md)
+- [Distribution](docs/DISTRIBUTION.md)
+- [Installation](docs/INSTALLATION.md)
 - [Limitations](docs/LIMITATIONS.md)
 - [Release](docs/RELEASE.md)
+- [SDK](docs/SDK.md)
+- [Embedding](docs/EMBEDDING.md)
+- [Versioning](docs/VERSIONING.md)
+- [Daemon Design](docs/DAEMON.md)
 - [Public Roadmap](docs/ROADMAP_PUBLIC.md)
 - [Testing](docs/TESTING.md)
 - [Roadmap](docs/ROADMAP.md)

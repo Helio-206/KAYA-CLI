@@ -559,10 +559,13 @@ fn draw_input(frame: &mut Frame, area: Rect, state: &UiState) {
 
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), inner);
 
-    let cursor_x = inner
-        .x
-        .saturating_add(2)
-        .saturating_add(state.input.chars().count().min(inner.width.saturating_sub(3) as usize) as u16);
+    let cursor_x = inner.x.saturating_add(2).saturating_add(
+        state
+            .input
+            .chars()
+            .count()
+            .min(inner.width.saturating_sub(3) as usize) as u16,
+    );
     let cursor_y = inner.y;
     frame.set_cursor_position((cursor_x, cursor_y));
 }

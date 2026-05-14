@@ -162,9 +162,8 @@ impl Runtime {
     pub async fn run(&mut self) -> Result<()> {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         self.network_shutdown_tx = Some(shutdown_tx);
-        self.network_task = Some(
-            self.spawn_network_reader(shutdown_rx, self.timeouts.network_recv_ms),
-        );
+        self.network_task =
+            Some(self.spawn_network_reader(shutdown_rx, self.timeouts.network_recv_ms));
         self.bootstrap().await;
 
         let mut ui = TerminalUi::enter()?;
@@ -236,7 +235,8 @@ impl Runtime {
                 Ok(Ok(())) => {}
                 Ok(Err(err)) if err.is_cancelled() => {}
                 Ok(Err(err)) => {
-                    self.ui_state.push_log(format!("network task join failed: {err}"));
+                    self.ui_state
+                        .push_log(format!("network task join failed: {err}"));
                 }
                 Err(_) => {
                     self.ui_state.push_log("network shutdown timed out");

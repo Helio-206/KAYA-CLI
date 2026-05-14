@@ -77,6 +77,10 @@ impl LocalIdentity {
             .to_string()
     }
 
+    pub fn set_callsign(&mut self, callsign: impl Into<String>) {
+        self.callsign = kaya_shared::normalize_callsign(&callsign.into());
+    }
+
     fn signing_key(&self) -> SigningKey {
         SigningKey::from_bytes(&self.ed25519_secret_key)
     }
@@ -562,6 +566,10 @@ impl SecureSessionManager {
             identity,
             sessions: HashMap::new(),
         }
+    }
+
+    pub fn set_identity(&mut self, identity: LocalIdentity) {
+        self.identity = identity;
     }
 
     pub fn start_request(&mut self, peer_node_id: &str) -> SessionHandshake {

@@ -1,0 +1,46 @@
+[package]
+name = "kaya-sdk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+name = "kaya_sdk"
+path = "src/lib.rs"
+
+[dependencies]
+kaya-core = { path = "../core" }
+kaya-events = { path = "../events" }
+kaya-files = { path = "../files" }
+kaya-mesh = { path = "../mesh" }
+kaya-peer = { path = "../peer" }
+kaya-rooms = { path = "../rooms" }
+kaya-security = { path = "../security" }
+kaya-shared = { path = "../shared" }
+tokio.workspace = true
+
+[dev-dependencies]
+anyhow = "1"
+kaya-protocol = { path = "../protocol" }
+tempfile = "3"
+
+[[example]]
+name = "simple-node"
+path = "../../examples/simple-node.rs"
+
+[[example]]
+name = "room-bot"
+path = "../../examples/room-bot.rs"
+
+[[example]]
+name = "secure-dm"
+path = "../../examples/secure-dm.rs"
+
+[[example]]
+name = "file-sender"
+path = "../../examples/file-sender.rs"
+
+[[example]]
+name = "mesh-status"
+path = "../../examples/mesh-status.rs"

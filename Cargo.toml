@@ -2,6 +2,7 @@
 members = [
     "crates/app",
     "crates/commands",
+    "crates/core",
     "crates/events",
     "crates/files",
     "crates/mesh",
@@ -9,6 +10,7 @@ members = [
     "crates/persistence",
     "crates/protocol",
     "crates/rooms",
+    "crates/sdk",
     "crates/security",
     "crates/shared",
     "crates/transport",
@@ -24,6 +26,7 @@ authors = ["KAYA CLI Contributors"]
 repository = "https://github.com/natanielmatondo/KAYA-CLI"
 
 [workspace.dependencies]
+async-trait = "0.1"
 clap = { version = "4.5", features = ["derive"] }
 crossterm = "0.28"
 ratatui = "0.29"

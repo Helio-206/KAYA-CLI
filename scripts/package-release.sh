@@ -30,8 +30,25 @@ cargo build --release -p kaya-app --bin kaya
 
 install -m 0755 target/release/kaya "${staging_dir}/bin/kaya"
 install -m 0644 README.md LICENSE Cargo.toml "${staging_dir}/"
-install -m 0644 docs/COMMANDS.md docs/DEMO_MODE.md docs/RELEASE.md docs/SECURITY.md "${staging_dir}/docs/"
-install -m 0755 scripts/run-demo.sh scripts/run-local-lab.sh "${staging_dir}/scripts/"
+install -m 0644 \
+    docs/COMMANDS.md \
+    docs/DEMO_MODE.md \
+    docs/DISTRIBUTION.md \
+    docs/INSTALLATION.md \
+    docs/RELEASE.md \
+    docs/SDK.md \
+    docs/SECURITY.md \
+    docs/VERSIONING.md \
+    RELEASE_NOTES.md \
+    "${staging_dir}/docs/"
+install -m 0755 \
+    scripts/generate-checksums.sh \
+    scripts/install-local.sh \
+    scripts/install.sh \
+    scripts/run-demo.sh \
+    scripts/run-local-lab.sh \
+    scripts/uninstall.sh \
+    "${staging_dir}/scripts/"
 
 tar -C "${out_dir}" -czf "${archive_path}" "${package_name}"
 
