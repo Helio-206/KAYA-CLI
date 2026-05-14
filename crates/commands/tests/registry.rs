@@ -8,6 +8,8 @@ fn registry_lists_every_command_usage() {
     assert!(usages.contains(&"/help"));
     assert!(usages.contains(&"/join <room>"));
     assert!(usages.contains(&"/msg <callsign|node-id> <message>"));
+    assert!(usages.contains(&"/secure-msg <callsign|node-id> <message>"));
+    assert!(usages.contains(&"/trust <peer>"));
 }
 
 #[test]
@@ -16,6 +18,8 @@ fn registry_validates_required_arguments() {
 
     assert!(registry.parse("/join").is_err());
     assert!(registry.parse("/msg Ana").is_err());
+    assert!(registry.parse("/secure-msg Ana").is_err());
+    assert!(registry.parse("/block").is_err());
 }
 
 #[test]
@@ -27,5 +31,15 @@ fn registry_parses_room_alias_and_normalizes() {
         ParsedInput::Command(Command::Join {
             room: "semana-info".into()
         })
+    );
+}
+
+#[test]
+fn registry_parses_peer_fingerprints_alias() {
+    let registry = CommandRegistry::default();
+
+    assert_eq!(
+        registry.parse("/peers --fingerprints").unwrap(),
+        ParsedInput::Command(Command::Who { fingerprints: true })
     );
 }

@@ -140,6 +140,8 @@ pub struct HistoryRecord {
     pub body: String,
     pub direct: bool,
     #[serde(default)]
+    pub encrypted: bool,
+    #[serde(default)]
     pub event: bool,
 }
 
@@ -147,6 +149,8 @@ pub struct HistoryRecord {
 pub struct KnownPeer {
     pub node_id: String,
     pub callsign: String,
+    #[serde(default)]
+    pub fingerprint: Option<String>,
     pub last_seen: String,
 }
 
@@ -296,6 +300,7 @@ mod tests {
             from: "Ana".into(),
             body: "recebido".into(),
             direct: false,
+            encrypted: false,
             event: false,
         };
 
@@ -316,6 +321,7 @@ mod tests {
             from: "Ana".into(),
             body: "sala".into(),
             direct: false,
+            encrypted: false,
             event: false,
         };
         let dm_record = HistoryRecord {
@@ -325,6 +331,7 @@ mod tests {
             from: "Bruno".into(),
             body: "dm".into(),
             direct: true,
+            encrypted: true,
             event: false,
         };
 

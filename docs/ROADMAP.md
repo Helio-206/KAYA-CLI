@@ -27,13 +27,15 @@
 - Configurable multicast group and port.
 - Export/import local state.
 
-## Phase 3: Trust and Privacy
+## Phase 3: Secure Identity and Encrypted DMs
 
 - Local keypair identity.
 - Signed packets.
-- Optional encrypted DMs.
-- Trust-on-first-use peer fingerprints.
-- Spoofing and replay protection.
+- Encrypted DMs with X25519, HKDF-SHA256, and ChaCha20-Poly1305.
+- Trust store with unknown, trusted, and blocked peer states.
+- Peer fingerprints in commands and UI.
+- Security event counters and warnings.
+- Remaining future work: stronger replay windows, passphrase-protected identity files, and encrypted room modes.
 
 ## Phase 4: Mesh Extensions
 

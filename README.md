@@ -2,7 +2,7 @@
 
 KAYA CLI is an offline-first, decentralized, terminal-based communication system for local networks. It is not just an "offline chat"; it is ephemeral social infrastructure built from physical proximity.
 
-When multiple devices enter the same LAN, KAYA creates a temporary digital space where operators can discover nearby peers, join rooms, exchange public messages, send DMs, inspect presence, and keep working without internet, cloud, or a central server.
+When multiple devices enter the same LAN, KAYA creates a temporary digital space where operators can discover nearby peers, join rooms, exchange public messages, send DMs, inspect presence, verify fingerprints, establish encrypted DM sessions, and keep working without internet, cloud, or a central server.
 
 ```text
 +-------------------- KAYA --------------------+
@@ -12,7 +12,7 @@ When multiple devices enter the same LAN, KAYA creates a temporary digital space
 +------------------- TRAFFIC ------------------+
 | [#geral] Ana: alguem recebe?                 |
 | [#geral] Helio: recebido                     |
-| [DM] Bruno -> Helio: teste privado           |
+| [SECURE] Bruno -> Helio: teste privado       |
 +------------------- NETWORK ------------------+
 | peers: 12    latency avg: 11ms               |
 | packets tx/rx: 221 / 204                     |
@@ -42,6 +42,7 @@ kaya-cli/
 │   ├── persistence/  # sled-backed local config/history/cache
 │   ├── protocol/     # packet schema, validation, JSON encode/decode
 │   ├── rooms/        # room membership and message routing
+│   ├── security/     # identity, signatures, trust, encrypted DMs
 │   ├── shared/       # constants, errors, node ids, utilities
 │   ├── transport/    # UDP multicast discovery and datagrams
 │   └── ui/           # ratatui/crossterm terminal interface
@@ -70,7 +71,7 @@ Run:
 cargo run -p kaya-app --bin kaya
 ```
 
-KAYA stores local config, peer cache, and basic history in `~/.kaya` by default. Override with:
+KAYA stores local config, identity, trust state, peer cache, and basic history in `~/.kaya` by default. Override with:
 
 ```bash
 KAYA_HOME=/tmp/kaya-helio cargo run -p kaya-app --bin kaya
@@ -91,7 +92,9 @@ last_room = "semana-info"
 log_level = "kaya=info"
 ```
 
-## Phase 1 Usage
+Identity is stored separately in `~/.kaya/identity.toml`. It contains the persistent node id plus Ed25519 and X25519 key material. Do not share this file.
+
+## Usage
 
 Open two or three terminals on the same LAN.
 
@@ -116,12 +119,14 @@ Terminal 3:
 ```text
 KAYA callsign: Bruno
 > /msg Helio teste privado
+> /secure-msg Helio teste privado cifrado
 ```
 
 ## Commands
 
 - `/help`
 - `/who`
+- `/peers --fingerprints`
 - `/rooms`
 - `/create <room>`
 - `/join <room>`
@@ -129,7 +134,16 @@ KAYA callsign: Bruno
 - `/current`
 - `/room <message>`
 - `/msg <callsign|node-id> <message>`
+- `/secure-msg <callsign|node-id> <message>`
 - `/presence <online|away|busy|invisible>`
+- `/identity`
+- `/fingerprint`
+- `/trust <peer>`
+- `/untrust <peer>`
+- `/block <peer>`
+- `/trust-list`
+- `/sessions`
+- `/close-session <peer>`
 - `/history [room]`
 - `/dm-history <peer>`
 - `/status`
@@ -168,6 +182,10 @@ cargo test
 - [LAB-07 direct messages](labs/LAB-07-direct-messages.md)
 - [LAB-08 presence](labs/LAB-08-presence.md)
 - [LAB-09 history](labs/LAB-09-history.md)
+- [LAB-10 identity and fingerprints](labs/LAB-10-identity-and-fingerprints.md)
+- [LAB-11 trust store](labs/LAB-11-trust-store.md)
+- [LAB-12 encrypted DMs](labs/LAB-12-encrypted-dms.md)
+- [LAB-13 blocked peers](labs/LAB-13-blocked-peers.md)
 - [Packet loss](labs/packet-loss.md)
 - [Peer timeout](labs/peer-timeout.md)
 - [Malformed packets](labs/malformed-packets.md)

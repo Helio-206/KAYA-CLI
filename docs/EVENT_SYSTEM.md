@@ -22,13 +22,23 @@ Default capacity:
 - `PeerTimedOut`
 - `PacketReceived`
 - `PacketSent`
+- `IdentityLoaded`
+- `IdentityCreated`
+- `PacketSignatureValid`
+- `PacketSignatureInvalid`
 - `RoomCreated`
 - `RoomJoined`
 - `RoomLeft`
 - `RoomMessageReceived`
 - `DirectMessageSent`
 - `DirectMessageReceived`
+- `EncryptedMessageReceived`
 - `PresenceUpdated`
+- `PeerTrusted`
+- `PeerBlocked`
+- `SecureSessionStarted`
+- `SecureSessionClosed`
+- `SecurityWarning`
 - `ErrorOccurred`
 - `NetworkStarted`
 - `ShutdownInitiated`
@@ -40,7 +50,8 @@ UDP socket
   -> network reader task
   -> PacketReceived event
   -> runtime handler
-  -> peer/room state update
+  -> security inspection
+  -> peer/room/session state update
   -> domain events
   -> UI state and diagnostics
 ```

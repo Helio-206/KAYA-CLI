@@ -6,15 +6,17 @@ KAYA is a modular Rust workspace designed around strict separation of responsibi
 
 1. `app` loads local config from `persistence`.
 2. The user chooses a callsign.
-3. `shared` generates a temporary `KY-XXXXXX` node id.
+3. `security` loads or creates `~/.kaya/identity.toml`.
 4. `transport` binds an IPv4 multicast UDP socket.
 5. The network reader task emits `PacketReceived` events.
 6. Incoming datagrams are decoded by `protocol`.
 7. The runtime deduplicates packet ids.
-8. `peer` updates presence and timeout state.
-9. `rooms` routes room messages and DMs.
-10. Domain events update the UI projection.
-11. `persistence` records config, known peers, and basic history.
+8. `security` verifies signed packet envelopes and applies block rules.
+9. `peer` updates presence and timeout state.
+10. `rooms` routes room messages and plaintext DMs.
+11. Secure DM packets are routed through `security` session state.
+12. Domain events update the UI projection.
+13. `persistence` records config, known peers, and basic history.
 
 ## Crates
 
@@ -41,6 +43,10 @@ Tracks nearby nodes, callsigns, rooms, online/offline state, and timeouts.
 ### rooms
 
 Tracks room membership, current room, public message history, and direct messages accepted for the local node.
+
+### security
+
+Owns persistent local cryptographic identity, Ed25519 packet signing, peer fingerprints, trust store state, X25519 secure DM session setup, HKDF key derivation, and ChaCha20-Poly1305 encrypted DM payload handling.
 
 ### commands
 
@@ -74,6 +80,8 @@ transport -> PacketReceived -> runtime -> peer/rooms -> domain events -> UI proj
 - `ROOM_MEMBERS_REQUEST` / `ROOM_MEMBERS_RESPONSE`: reconciles a light member snapshot.
 - `ROOM_MESSAGE`: routes public text to a room.
 - `DIRECT_MESSAGE`: routes private text to a target node id or callsign.
+- `DM_SESSION_REQUEST` / `DM_SESSION_ACCEPT`: establishes encrypted DM session state.
+- `DIRECT_MESSAGE_ENCRYPTED`: routes encrypted private text after local decryption.
 - `LEAVE`: marks a peer offline.
 - `PRESENCE_UPDATE`: updates peer presence.
 - `PING`/`PONG`: reserved for latency measurement.
@@ -91,3 +99,13 @@ Phase 2 adds a light social synchronization layer:
 - DMs resolve callsigns to node ids and reject ambiguous callsigns;
 - presence is tracked as `online`, `away`, `busy`, `invisible`, or derived `offline`;
 - local history stores room messages and DMs through the persistence crate.
+
+## Phase 3 Security Layer
+
+Phase 3 keeps public rooms compatible and adds security around identity and DMs:
+
+- every current KAYA node signs outgoing packets with its local Ed25519 identity;
+- peers are fingerprinted from their signing public key and recorded in the trust store;
+- blocked peers are rejected before peer, room, or DM routing;
+- `/secure-msg` negotiates an X25519 session and queues the first message until `DM_SESSION_ACCEPT`;
+- encrypted DMs are decrypted in runtime before being projected as `[SECURE]` chat events.

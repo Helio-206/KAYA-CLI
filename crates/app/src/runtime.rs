@@ -8,9 +8,11 @@ use kaya_commands::CommandRegistry;
 use kaya_events::{EventBus, KayaEvent};
 use kaya_peer::PeerRegistry;
 use kaya_persistence::{ConfigStore, KayaConfig, Store};
+use kaya_security::{LocalIdentity, SecureSessionManager, TrustStore};
 use kaya_shared::{PresenceStatus, Result};
 use kaya_transport::{MulticastTransport, PacketDeduplicator};
 use kaya_ui::{TerminalUi, UiState};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -20,12 +22,17 @@ use tracing::info;
 pub struct Runtime {
     node_id: String,
     callsign: String,
+    identity: LocalIdentity,
+    identity_created: bool,
     transport: MulticastTransport,
     bus: EventBus,
     event_rx: broadcast::Receiver<KayaEvent>,
     peers: PeerRegistry,
     rooms: kaya_rooms::RoomStore,
     store: Store,
+    trust_store: TrustStore,
+    sessions: SecureSessionManager,
+    pending_secure_messages: HashMap<String, Vec<String>>,
     config_store: ConfigStore,
     config: KayaConfig,
     commands: CommandRegistry,
@@ -36,16 +43,31 @@ pub struct Runtime {
     network_task: Option<JoinHandle<()>>,
 }
 
+pub struct RuntimeInit {
+    pub identity: LocalIdentity,
+    pub identity_created: bool,
+    pub transport: MulticastTransport,
+    pub store: Store,
+    pub config_store: ConfigStore,
+    pub config: KayaConfig,
+    pub bus: EventBus,
+    pub trust_store: TrustStore,
+}
+
 impl Runtime {
-    pub fn new(
-        node_id: String,
-        callsign: String,
-        transport: MulticastTransport,
-        store: Store,
-        config_store: ConfigStore,
-        config: KayaConfig,
-        bus: EventBus,
-    ) -> Self {
+    pub fn new(init: RuntimeInit) -> Self {
+        let RuntimeInit {
+            identity,
+            identity_created,
+            transport,
+            store,
+            config_store,
+            config,
+            bus,
+            trust_store,
+        } = init;
+        let node_id = identity.node_id.clone();
+        let callsign = identity.callsign.clone();
         let mut rooms = kaya_rooms::RoomStore::new(&node_id, &callsign);
         if rooms.join(config.active_room()).is_err() {
             let _ = rooms.join(kaya_shared::DEFAULT_ROOM);
@@ -58,12 +80,15 @@ impl Runtime {
         );
         let mut ui_state = UiState::new(&node_id, &callsign, rooms.current_room());
         ui_state.diagnostics = diagnostics.to_ui();
+        ui_state.identity_fingerprint = identity.short_fingerprint();
 
         Self {
             peers: PeerRegistry::with_timeout(
                 &node_id,
                 Duration::from_secs(config.peer_timeout_secs),
             ),
+            identity: identity.clone(),
+            identity_created,
             node_id,
             callsign,
             transport,
@@ -71,6 +96,9 @@ impl Runtime {
             bus,
             rooms,
             store,
+            trust_store,
+            sessions: SecureSessionManager::new(identity),
+            pending_secure_messages: HashMap::new(),
             config_store,
             config,
             commands: CommandRegistry::default(),

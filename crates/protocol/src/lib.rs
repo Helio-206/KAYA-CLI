@@ -59,6 +59,9 @@ pub enum PacketType {
     RoomMessage,
     DirectMessage,
     DmAck,
+    DmSessionRequest,
+    DmSessionAccept,
+    DirectMessageEncrypted,
     PresenceUpdate,
     Ping,
     Pong,
@@ -79,6 +82,19 @@ pub struct Packet {
     pub target_node: Option<String>,
     #[serde(default)]
     pub payload: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EncryptedDirectMessagePayload {
+    pub session_id: String,
+    pub nonce: String,
+    pub ciphertext: String,
+    pub sender_fingerprint: String,
+    pub timestamp: String,
 }
 
 impl Packet {
@@ -100,6 +116,8 @@ impl Packet {
             room: room.map(|room| normalize_room(&room)),
             target_node,
             payload,
+            public_key: None,
+            signature: None,
         }
     }
 
@@ -281,6 +299,66 @@ impl Packet {
         )
     }
 
+    pub fn dm_session_request(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        session_id: impl Into<String>,
+        x25519_public_key: impl Into<String>,
+        fingerprint: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            PacketType::DmSessionRequest,
+            node_id,
+            callsign,
+            None,
+            Some(target_node.into()),
+            json!({
+                "session_id": session_id.into(),
+                "x25519_public_key": x25519_public_key.into(),
+                "fingerprint": fingerprint.into()
+            }),
+        )
+    }
+
+    pub fn dm_session_accept(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        session_id: impl Into<String>,
+        x25519_public_key: impl Into<String>,
+        fingerprint: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            PacketType::DmSessionAccept,
+            node_id,
+            callsign,
+            None,
+            Some(target_node.into()),
+            json!({
+                "session_id": session_id.into(),
+                "x25519_public_key": x25519_public_key.into(),
+                "fingerprint": fingerprint.into()
+            }),
+        )
+    }
+
+    pub fn direct_message_encrypted(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        payload: EncryptedDirectMessagePayload,
+    ) -> Self {
+        Self::new(
+            PacketType::DirectMessageEncrypted,
+            node_id,
+            callsign,
+            None,
+            Some(target_node.into()),
+            json!(payload),
+        )
+    }
+
     pub fn presence_update(
         node_id: impl Into<String>,
         callsign: impl Into<String>,
@@ -458,6 +536,22 @@ impl Packet {
                     });
                 }
             }
+            PacketType::DmSessionRequest
+            | PacketType::DmSessionAccept
+            | PacketType::DirectMessageEncrypted => {
+                if self
+                    .target_node
+                    .as_deref()
+                    .unwrap_or_default()
+                    .trim()
+                    .is_empty()
+                {
+                    return Err(ProtocolError::MissingField {
+                        packet_type: self.packet_type,
+                        field: "target_node",
+                    });
+                }
+            }
             PacketType::System | PacketType::Error => {}
         }
 
@@ -476,8 +570,46 @@ impl Packet {
             });
         }
 
+        match self.packet_type {
+            PacketType::DmSessionRequest | PacketType::DmSessionAccept => {
+                for field in ["session_id", "x25519_public_key", "fingerprint"] {
+                    if !payload_has_str(&self.payload, field) {
+                        return Err(ProtocolError::MissingField {
+                            packet_type: self.packet_type,
+                            field,
+                        });
+                    }
+                }
+            }
+            PacketType::DirectMessageEncrypted => {
+                for field in [
+                    "session_id",
+                    "nonce",
+                    "ciphertext",
+                    "sender_fingerprint",
+                    "timestamp",
+                ] {
+                    if !payload_has_str(&self.payload, field) {
+                        return Err(ProtocolError::MissingField {
+                            packet_type: self.packet_type,
+                            field,
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+
         Ok(())
     }
+}
+
+fn payload_has_str(payload: &Value, field: &'static str) -> bool {
+    payload
+        .get(field)
+        .and_then(Value::as_str)
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false)
 }
 
 pub fn encode(packet: &Packet) -> ProtocolResult<Vec<u8>> {
@@ -592,6 +724,34 @@ mod tests {
                 vec!["KY-71AF92".into()],
             ),
             Packet::presence_update("KY-71AF92", "Helio", "semana-info", PresenceStatus::Busy),
+            Packet::dm_session_request(
+                "KY-71AF92",
+                "Helio",
+                "KY-AAAAAA",
+                "session-1",
+                "xkey",
+                "KAYA-FP: 8A19-FC90-B2D1",
+            ),
+            Packet::dm_session_accept(
+                "KY-AAAAAA",
+                "Ana",
+                "KY-71AF92",
+                "session-1",
+                "xkey",
+                "KAYA-FP: 8A19-FC90-B2D1",
+            ),
+            Packet::direct_message_encrypted(
+                "KY-71AF92",
+                "Helio",
+                "KY-AAAAAA",
+                EncryptedDirectMessagePayload {
+                    session_id: "session-1".into(),
+                    nonce: "nonce".into(),
+                    ciphertext: "ciphertext".into(),
+                    sender_fingerprint: "KAYA-FP: 8A19-FC90-B2D1".into(),
+                    timestamp: "123".into(),
+                },
+            ),
         ];
 
         for packet in packets {
@@ -612,5 +772,16 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn signed_packet_envelope_roundtrips() {
+        let mut packet = Packet::hello("KY-71AF92", "Helio", "geral");
+        packet.public_key = Some("public".into());
+        packet.signature = Some("signature".into());
+
+        let value: Value = serde_json::from_slice(&encode(&packet).unwrap()).unwrap();
+        assert_eq!(value["public_key"], "public");
+        assert_eq!(value["signature"], "signature");
     }
 }

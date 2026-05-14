@@ -20,6 +20,7 @@ kaya-peer = { path = "../peer" }
 kaya-persistence = { path = "../persistence" }
 kaya-protocol = { path = "../protocol" }
 kaya-rooms = { path = "../rooms" }
+kaya-security = { path = "../security" }
 kaya-shared = { path = "../shared" }
 kaya-transport = { path = "../transport" }
 kaya-ui = { path = "../ui" }

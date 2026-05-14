@@ -16,6 +16,7 @@ impl Runtime {
             target: None,
             body: body.into(),
             direct: false,
+            encrypted: false,
             local: false,
         });
     }
@@ -28,6 +29,7 @@ impl Runtime {
             target: message.target_node.clone(),
             body: message.body.clone(),
             direct: message.direct,
+            encrypted: message.encrypted,
             local,
         });
     }
@@ -40,6 +42,7 @@ impl Runtime {
             from: message.from_callsign.clone(),
             body: message.body.clone(),
             direct: message.direct,
+            encrypted: message.encrypted,
             event: false,
         };
         if let Err(err) = self.store.append_history(&record) {
@@ -54,6 +57,10 @@ impl Runtime {
         let peer = KnownPeer {
             node_id: packet.node_id.clone(),
             callsign: packet.callsign.clone(),
+            fingerprint: self
+                .trust_store
+                .get(&packet.node_id)
+                .map(|peer| peer.fingerprint.clone()),
             last_seen: packet.timestamp.clone(),
         };
         if let Err(err) = self.store.remember_peer(&peer) {
@@ -69,7 +76,13 @@ impl Runtime {
             .peers
             .snapshots()
             .into_iter()
+            .filter(|peer| !self.trust_store.is_blocked(&peer.node_id))
             .map(|peer| UiPeer {
+                fingerprint: self
+                    .trust_store
+                    .get(&peer.node_id)
+                    .map(|known| short_fingerprint(&known.fingerprint)),
+                trust_status: self.trust_store.status(&peer.node_id).to_string(),
                 node_id: peer.node_id,
                 callsign: peer.callsign,
                 presence: peer.presence,
@@ -108,6 +121,14 @@ impl Runtime {
         self.ui_state.current_room = self.rooms.current_room().to_string();
         self.ui_state.space = self.rooms.current_room().to_string();
         self.ui_state.presence = self.presence;
+        self.sync_security_to_ui();
+    }
+
+    pub(super) fn sync_security_to_ui(&mut self) {
+        self.ui_state.identity_fingerprint = self.identity.short_fingerprint();
+        self.ui_state.trusted_peers = self.trust_store.trusted_count();
+        self.ui_state.blocked_peers = self.trust_store.blocked_count();
+        self.ui_state.secure_sessions = self.sessions.active_count();
     }
 
     pub(super) fn publish(&self, event: KayaEvent) {
@@ -115,4 +136,11 @@ impl Runtime {
             error!(%err, "event publish failed");
         }
     }
+}
+
+fn short_fingerprint(fingerprint: &str) -> String {
+    fingerprint
+        .strip_prefix(kaya_security::FINGERPRINT_PREFIX)
+        .unwrap_or(fingerprint)
+        .to_string()
 }

@@ -10,7 +10,7 @@ pub enum ParsedInput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Help,
-    Who,
+    Who { fingerprints: bool },
     Rooms,
     Create { room: String },
     Join { room: String },
@@ -18,7 +18,16 @@ pub enum Command {
     Current,
     RoomMessage { body: String },
     Msg { target: String, body: String },
+    SecureMsg { target: String, body: String },
     Presence { status: PresenceStatus },
+    Identity,
+    Fingerprint,
+    Trust { peer: String },
+    Untrust { peer: String },
+    Block { peer: String },
+    TrustList,
+    Sessions,
+    CloseSession { peer: String },
     History { room: Option<String> },
     DmHistory { peer: String },
     Status,
@@ -38,7 +47,16 @@ pub enum CommandKind {
     Current,
     RoomMessage,
     Msg,
+    SecureMsg,
     Presence,
+    Identity,
+    Fingerprint,
+    Trust,
+    Untrust,
+    Block,
+    TrustList,
+    Sessions,
+    CloseSession,
     History,
     DmHistory,
     Status,
@@ -68,8 +86,8 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         kind: CommandKind::Who,
         name: "who",
         aliases: &["peers"],
-        usage: "/who",
-        description: "list discovered peers and presence",
+        usage: "/who [--fingerprints]",
+        description: "list discovered peers, presence and optional fingerprints",
     },
     CommandSpec {
         kind: CommandKind::Rooms,
@@ -121,11 +139,74 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         description: "send a direct message",
     },
     CommandSpec {
+        kind: CommandKind::SecureMsg,
+        name: "secure-msg",
+        aliases: &["smsg"],
+        usage: "/secure-msg <callsign|node-id> <message>",
+        description: "send an encrypted direct message",
+    },
+    CommandSpec {
         kind: CommandKind::Presence,
         name: "presence",
         aliases: &["p"],
         usage: "/presence <online|away|busy|invisible>",
         description: "update local presence",
+    },
+    CommandSpec {
+        kind: CommandKind::Identity,
+        name: "identity",
+        aliases: &["id"],
+        usage: "/identity",
+        description: "show local cryptographic identity",
+    },
+    CommandSpec {
+        kind: CommandKind::Fingerprint,
+        name: "fingerprint",
+        aliases: &["fp"],
+        usage: "/fingerprint",
+        description: "show local public fingerprint",
+    },
+    CommandSpec {
+        kind: CommandKind::Trust,
+        name: "trust",
+        aliases: &[],
+        usage: "/trust <peer>",
+        description: "mark a known peer as trusted",
+    },
+    CommandSpec {
+        kind: CommandKind::Untrust,
+        name: "untrust",
+        aliases: &[],
+        usage: "/untrust <peer>",
+        description: "return a known peer to unknown trust",
+    },
+    CommandSpec {
+        kind: CommandKind::Block,
+        name: "block",
+        aliases: &[],
+        usage: "/block <peer>",
+        description: "block a known peer",
+    },
+    CommandSpec {
+        kind: CommandKind::TrustList,
+        name: "trust-list",
+        aliases: &["trustlist"],
+        usage: "/trust-list",
+        description: "show known peer trust states",
+    },
+    CommandSpec {
+        kind: CommandKind::Sessions,
+        name: "sessions",
+        aliases: &[],
+        usage: "/sessions",
+        description: "show secure DM sessions",
+    },
+    CommandSpec {
+        kind: CommandKind::CloseSession,
+        name: "close-session",
+        aliases: &["close-secure"],
+        usage: "/close-session <peer>",
+        description: "close a secure DM session",
     },
     CommandSpec {
         kind: CommandKind::History,
@@ -231,7 +312,9 @@ impl CommandRegistry {
     fn parse_command(&self, spec: &CommandSpec, args: &str) -> Result<Command> {
         match spec.kind {
             CommandKind::Help => Ok(Command::Help),
-            CommandKind::Who => Ok(Command::Who),
+            CommandKind::Who => Ok(Command::Who {
+                fingerprints: args.split_whitespace().any(|arg| arg == "--fingerprints"),
+            }),
             CommandKind::Rooms => Ok(Command::Rooms),
             CommandKind::Create => Ok(Command::Create {
                 room: parse_room_arg(args, spec.usage)?,
@@ -253,6 +336,7 @@ impl CommandRegistry {
                 })
             }
             CommandKind::Msg => parse_msg_command(args, spec.usage),
+            CommandKind::SecureMsg => parse_secure_msg_command(args, spec.usage),
             CommandKind::Presence => {
                 let Some(status) = first_arg(args).and_then(PresenceStatus::parse) else {
                     return Err(KayaError::InvalidCommand(format!("usage: {}", spec.usage)));
@@ -264,6 +348,22 @@ impl CommandRegistry {
                 }
                 Ok(Command::Presence { status })
             }
+            CommandKind::Identity => Ok(Command::Identity),
+            CommandKind::Fingerprint => Ok(Command::Fingerprint),
+            CommandKind::Trust => Ok(Command::Trust {
+                peer: parse_peer_arg(args, spec.usage)?.to_string(),
+            }),
+            CommandKind::Untrust => Ok(Command::Untrust {
+                peer: parse_peer_arg(args, spec.usage)?.to_string(),
+            }),
+            CommandKind::Block => Ok(Command::Block {
+                peer: parse_peer_arg(args, spec.usage)?.to_string(),
+            }),
+            CommandKind::TrustList => Ok(Command::TrustList),
+            CommandKind::Sessions => Ok(Command::Sessions),
+            CommandKind::CloseSession => Ok(Command::CloseSession {
+                peer: parse_peer_arg(args, spec.usage)?.to_string(),
+            }),
             CommandKind::History => Ok(Command::History {
                 room: first_arg(args).map(validate_room_name).transpose()?,
             }),
@@ -323,6 +423,32 @@ fn parse_msg_command(args: &str, usage: &str) -> Result<Command> {
         target: target.to_string(),
         body: body.to_string(),
     })
+}
+
+fn parse_secure_msg_command(args: &str, usage: &str) -> Result<Command> {
+    let (target, body) = split_target_and_body(args, usage)?;
+    Ok(Command::SecureMsg {
+        target: target.to_string(),
+        body: body.to_string(),
+    })
+}
+
+fn parse_peer_arg<'a>(args: &'a str, usage: &str) -> Result<&'a str> {
+    first_arg(args).ok_or_else(|| KayaError::InvalidCommand(format!("usage: {usage}")))
+}
+
+fn split_target_and_body<'a>(args: &'a str, usage: &str) -> Result<(&'a str, &'a str)> {
+    let (target, body) = args
+        .trim()
+        .split_once(char::is_whitespace)
+        .ok_or_else(|| KayaError::InvalidCommand(format!("usage: {usage}")))?;
+
+    let target = target.trim();
+    let body = body.trim();
+    if target.is_empty() || body.is_empty() {
+        return Err(KayaError::InvalidCommand(format!("usage: {usage}")));
+    }
+    Ok((target, body))
 }
 
 #[cfg(test)]
@@ -404,11 +530,39 @@ mod tests {
         let help = help_text();
         assert!(help.contains("/join <room>"));
         assert!(help.contains("/presence <online|away|busy|invisible>"));
+        assert!(help.contains("/secure-msg <callsign|node-id> <message>"));
     }
 
     #[test]
     fn exposes_usages_for_future_autocomplete() {
         let registry = CommandRegistry::default();
         assert!(registry.usages().contains(&"/status"));
+    }
+
+    #[test]
+    fn parses_phase_three_security_commands() {
+        let registry = CommandRegistry::default();
+
+        assert_eq!(
+            registry.parse("/peers --fingerprints").unwrap(),
+            ParsedInput::Command(Command::Who { fingerprints: true })
+        );
+        assert_eq!(
+            registry.parse("/secure-msg Ana segredo").unwrap(),
+            ParsedInput::Command(Command::SecureMsg {
+                target: "Ana".into(),
+                body: "segredo".into()
+            })
+        );
+        assert_eq!(
+            registry.parse("/trust KY-71AF92").unwrap(),
+            ParsedInput::Command(Command::Trust {
+                peer: "KY-71AF92".into()
+            })
+        );
+        assert_eq!(
+            registry.parse("/close-session Ana").unwrap(),
+            ParsedInput::Command(Command::CloseSession { peer: "Ana".into() })
+        );
     }
 }

@@ -5,11 +5,12 @@ mod runtime;
 
 use kaya_events::EventBus;
 use kaya_persistence::{default_data_dir, ConfigStore, Store};
-use kaya_shared::{KayaError, NodeId, Result};
+use kaya_security::{IdentityStore, TrustStore};
+use kaya_shared::{KayaError, Result};
 use kaya_transport::{MulticastTransport, TransportConfig};
 use logging::init_tracing;
 use prompt::prompt_callsign;
-use runtime::Runtime;
+use runtime::{Runtime, RuntimeInit};
 use std::net::Ipv4Addr;
 
 pub async fn run() -> Result<()> {
@@ -22,22 +23,26 @@ pub async fn run() -> Result<()> {
     let callsign = prompt_callsign(config.nickname.as_deref())?;
     config.nickname = Some(callsign.clone());
     config_store.save(&config)?;
+    let identity_store = IdentityStore::new(&data_dir);
+    let identity_created = !identity_store.path().exists();
+    let identity = identity_store.load_or_create(&callsign)?;
+    let trust_store = TrustStore::load_or_create(&data_dir)?;
 
     let transport = MulticastTransport::bind(transport_config(&config)?)
         .await
         .map_err(|err| KayaError::Transport(err.to_string()))?;
     let bus = EventBus::system_default();
-    let node_id = NodeId::generate().to_string();
 
-    let mut runtime = Runtime::new(
-        node_id,
-        callsign,
+    let mut runtime = Runtime::new(RuntimeInit {
+        identity,
         transport,
         store,
         config_store,
         config,
         bus,
-    );
+        trust_store,
+        identity_created,
+    });
     runtime.run().await
 }
 

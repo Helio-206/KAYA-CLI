@@ -2,8 +2,15 @@ use super::Runtime;
 use kaya_commands::{Command, ParsedInput};
 use kaya_events::KayaEvent;
 use kaya_peer::TargetResolution;
-use kaya_protocol::Packet;
+use kaya_protocol::{EncryptedDirectMessagePayload, Packet};
+use kaya_security::{TrustStatus, FINGERPRINT_PREFIX};
 use kaya_shared::Result;
+
+struct SecurityTarget {
+    node_id: String,
+    callsign: String,
+    fingerprint: String,
+}
 
 impl Runtime {
     pub(super) async fn handle_input(&mut self, input: String) -> Result<bool> {
@@ -27,7 +34,7 @@ impl Runtime {
     async fn handle_command(&mut self, command: Command) -> Result<bool> {
         match command {
             Command::Help => self.system_message(self.commands.help_text()),
-            Command::Who => self.show_who(),
+            Command::Who { fingerprints } => self.show_who(fingerprints),
             Command::Rooms => {
                 self.show_rooms();
             }
@@ -41,7 +48,18 @@ impl Runtime {
             }
             Command::RoomMessage { body } => self.send_room_message(body).await,
             Command::Msg { target, body } => self.send_direct_message(target, body).await,
+            Command::SecureMsg { target, body } => {
+                self.send_secure_direct_message(target, body).await
+            }
             Command::Presence { status } => self.set_presence(status).await,
+            Command::Identity => self.show_identity(),
+            Command::Fingerprint => self.system_message(self.identity.fingerprint.clone()),
+            Command::Trust { peer } => self.set_peer_trust_status(&peer, TrustStatus::Trusted),
+            Command::Untrust { peer } => self.set_peer_trust_status(&peer, TrustStatus::Unknown),
+            Command::Block { peer } => self.set_peer_trust_status(&peer, TrustStatus::Blocked),
+            Command::TrustList => self.show_trust_list(),
+            Command::Sessions => self.show_sessions(),
+            Command::CloseSession { peer } => self.close_secure_session(&peer),
             Command::History { room } => self.show_history(room.as_deref()),
             Command::DmHistory { peer } => self.show_dm_history(&peer),
             Command::Status => self.show_status(),
@@ -167,6 +185,17 @@ impl Runtime {
             }
         };
 
+        if self.trust_store.is_blocked(&target.node_id) {
+            self.system_message(format!("dm target is blocked: {}", target.node_id));
+            return;
+        }
+
+        if self.sessions.has_active(&target.node_id) {
+            self.send_encrypted_message(target.node_id.clone(), target.callsign.clone(), body)
+                .await;
+            return;
+        }
+
         self.rooms
             .add_local_direct_message(target.node_id.clone(), body.clone());
         self.publish(KayaEvent::DirectMessageSent {
@@ -181,6 +210,108 @@ impl Runtime {
             body,
         ))
         .await;
+    }
+
+    async fn send_secure_direct_message(&mut self, target: String, body: String) {
+        let target = match self.peers.resolve_target_checked(&target) {
+            TargetResolution::Found(peer) => peer,
+            TargetResolution::NotFound(target) => {
+                self.system_message(format!("secure dm target not found: {target}"));
+                return;
+            }
+            TargetResolution::DuplicateCallsign { callsign, matches } => {
+                self.system_message(format!(
+                    "callsign {callsign} is ambiguous: {}",
+                    matches.join(", ")
+                ));
+                return;
+            }
+        };
+
+        if self.trust_store.is_blocked(&target.node_id) {
+            self.system_message(format!("secure dm target is blocked: {}", target.node_id));
+            return;
+        }
+
+        if self.sessions.has_active(&target.node_id) {
+            self.send_encrypted_message(target.node_id, target.callsign, body)
+                .await;
+            return;
+        }
+
+        let request = self.sessions.start_request(&target.node_id);
+        self.pending_secure_messages
+            .entry(target.node_id.clone())
+            .or_default()
+            .push(body);
+        self.send_packet(Packet::dm_session_request(
+            self.node_id.clone(),
+            self.callsign.clone(),
+            target.node_id.clone(),
+            request.session_id,
+            request.x25519_public_key,
+            request.fingerprint,
+        ))
+        .await;
+        self.system_message(format!(
+            "secure session requested with {}; message queued",
+            target.callsign
+        ));
+        self.sync_security_to_ui();
+    }
+
+    pub(super) async fn flush_pending_secure_messages(&mut self, peer_node_id: &str) {
+        let Some(messages) = self.pending_secure_messages.remove(peer_node_id) else {
+            return;
+        };
+        let callsign = self
+            .peers
+            .get(peer_node_id)
+            .map(|peer| peer.callsign.clone())
+            .unwrap_or_else(|| peer_node_id.to_string());
+        for body in messages {
+            self.send_encrypted_message(peer_node_id.to_string(), callsign.clone(), body)
+                .await;
+        }
+    }
+
+    async fn send_encrypted_message(
+        &mut self,
+        target_node: String,
+        target_callsign: String,
+        body: String,
+    ) {
+        match self.sessions.encrypt(&target_node, &body) {
+            Ok(payload) => {
+                self.publish(KayaEvent::EncryptedMessageReceived {
+                    from_node: self.node_id.clone(),
+                    from_callsign: self.callsign.clone(),
+                    target_node: target_node.clone(),
+                    body: body.clone(),
+                    local: true,
+                });
+                self.send_packet(Packet::direct_message_encrypted(
+                    self.node_id.clone(),
+                    self.callsign.clone(),
+                    target_node,
+                    EncryptedDirectMessagePayload {
+                        session_id: payload.session_id,
+                        nonce: payload.nonce,
+                        ciphertext: payload.ciphertext,
+                        sender_fingerprint: payload.sender_fingerprint,
+                        timestamp: payload.timestamp,
+                    },
+                ))
+                .await;
+                self.ui_state
+                    .push_log(format!("encrypted dm sent to {target_callsign}"));
+                self.sync_security_to_ui();
+            }
+            Err(err) => self.publish(KayaEvent::SecurityWarning {
+                node_id: Some(target_node),
+                message: err.to_string(),
+            }),
+        }
     }
 
     async fn set_presence(&mut self, status: kaya_shared::PresenceStatus) {
@@ -199,7 +330,7 @@ impl Runtime {
         .await;
     }
 
-    fn show_who(&mut self) {
+    fn show_who(&mut self, fingerprints: bool) {
         let peers = self.peers.snapshots();
         if peers.is_empty() {
             self.system_message("no peers discovered");
@@ -208,12 +339,26 @@ impl Runtime {
 
         let summary = peers
             .into_iter()
+            .filter(|peer| !self.trust_store.is_blocked(&peer.node_id))
             .map(|peer| {
                 let status = if peer.online { "online" } else { "offline" };
-                format!(
-                    "{} {} {} {}",
-                    peer.callsign, peer.node_id, peer.presence, status
-                )
+                if fingerprints {
+                    let fingerprint = self
+                        .trust_store
+                        .get(&peer.node_id)
+                        .map(|peer| short_fingerprint(&peer.fingerprint))
+                        .unwrap_or_else(|| "--".into());
+                    let trust = self.trust_store.status(&peer.node_id);
+                    format!(
+                        "{} {} {} {} {} {}",
+                        peer.callsign, peer.node_id, peer.presence, status, fingerprint, trust
+                    )
+                } else {
+                    format!(
+                        "{} {} {} {}",
+                        peer.callsign, peer.node_id, peer.presence, status
+                    )
+                }
             })
             .collect::<Vec<_>>()
             .join(" | ");
@@ -287,13 +432,165 @@ impl Runtime {
 
     fn show_status(&mut self) {
         self.system_message(format!(
-            "node={} room=#{} peers={} packets_tx={} packets_rx={} events={}",
+            "node={} room=#{} peers={} packets_tx={} packets_rx={} events={} secure_sessions={}",
             self.node_id,
             self.rooms.current_room(),
             self.peers.online_count(),
             self.ui_state.packets_tx,
             self.ui_state.packets_rx,
-            self.diagnostics.counters.total()
+            self.diagnostics.counters.total(),
+            self.sessions.active_count()
         ));
     }
+
+    fn show_identity(&mut self) {
+        self.system_message(format!(
+            "identity node={} callsign={} fingerprint={} ed25519={} x25519={}",
+            self.node_id,
+            self.callsign,
+            self.identity.fingerprint,
+            short_key(&self.identity.ed25519_public_key_hex()),
+            short_key(&self.identity.x25519_public_key_hex())
+        ));
+    }
+
+    fn set_peer_trust_status(&mut self, peer: &str, status: TrustStatus) {
+        let Some(target) = self.resolve_security_target(peer) else {
+            return;
+        };
+        match self.trust_store.set_status(&target.node_id, status) {
+            Ok(()) => match status {
+                TrustStatus::Trusted => self.publish(KayaEvent::PeerTrusted {
+                    node_id: target.node_id,
+                    callsign: target.callsign,
+                    fingerprint: target.fingerprint,
+                }),
+                TrustStatus::Blocked => self.publish(KayaEvent::PeerBlocked {
+                    node_id: target.node_id,
+                    callsign: target.callsign,
+                    fingerprint: target.fingerprint,
+                }),
+                TrustStatus::Unknown => {
+                    self.system_message(format!("untrusted {}", target.node_id));
+                    self.sync_peers_to_ui();
+                }
+            },
+            Err(err) => self.system_message(err.to_string()),
+        }
+    }
+
+    fn resolve_security_target(&mut self, target: &str) -> Option<SecurityTarget> {
+        if let Some(peer) = self.trust_store.find(target) {
+            return Some(SecurityTarget {
+                node_id: peer.node_id.clone(),
+                callsign: peer.callsign.clone(),
+                fingerprint: peer.fingerprint.clone(),
+            });
+        }
+
+        match self.peers.resolve_target_checked(target) {
+            TargetResolution::Found(peer) => {
+                let Some(record) = self.trust_store.get(&peer.node_id) else {
+                    self.system_message(format!(
+                        "peer {} has no fingerprint yet; wait for a signed packet",
+                        peer.node_id
+                    ));
+                    return None;
+                };
+                Some(SecurityTarget {
+                    node_id: peer.node_id,
+                    callsign: peer.callsign,
+                    fingerprint: record.fingerprint.clone(),
+                })
+            }
+            TargetResolution::NotFound(target) => {
+                self.system_message(format!("peer not found: {target}"));
+                None
+            }
+            TargetResolution::DuplicateCallsign { callsign, matches } => {
+                self.system_message(format!(
+                    "callsign {callsign} is ambiguous: {}",
+                    matches.join(", ")
+                ));
+                None
+            }
+        }
+    }
+
+    fn show_trust_list(&mut self) {
+        let peers = self.trust_store.list();
+        if peers.is_empty() {
+            self.system_message("trust store is empty");
+            return;
+        }
+        let summary = peers
+            .into_iter()
+            .map(|peer| {
+                format!(
+                    "{} {} {} {}",
+                    peer.callsign,
+                    peer.node_id,
+                    short_fingerprint(&peer.fingerprint),
+                    peer.trust_status
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" | ");
+        self.system_message(summary);
+    }
+
+    fn show_sessions(&mut self) {
+        let sessions = self.sessions.views();
+        if sessions.is_empty() {
+            self.system_message("no secure sessions");
+            return;
+        }
+        let summary = sessions
+            .into_iter()
+            .map(|session| {
+                format!(
+                    "{} {} {} count={}",
+                    session.peer_node_id,
+                    session.session_id,
+                    session.status,
+                    session.message_counter
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" | ");
+        self.system_message(summary);
+    }
+
+    fn close_secure_session(&mut self, peer: &str) {
+        let Some(target) = self.resolve_security_target(peer) else {
+            return;
+        };
+        let session_id = self
+            .sessions
+            .views()
+            .into_iter()
+            .find(|session| session.peer_node_id == target.node_id)
+            .map(|session| session.session_id);
+        if self.sessions.close(&target.node_id) {
+            self.publish(KayaEvent::SecureSessionClosed {
+                peer_node_id: target.node_id,
+                session_id,
+            });
+        } else {
+            self.system_message(format!("no secure session with {}", target.node_id));
+        }
+    }
+}
+
+fn short_fingerprint(fingerprint: &str) -> String {
+    fingerprint
+        .strip_prefix(FINGERPRINT_PREFIX)
+        .unwrap_or(fingerprint)
+        .to_string()
+}
+
+fn short_key(key: &str) -> String {
+    let head = key.get(..8).unwrap_or(key);
+    let tail = key.get(key.len().saturating_sub(8)..).unwrap_or_default();
+    format!("{head}...{tail}")
 }

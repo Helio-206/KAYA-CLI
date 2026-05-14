@@ -128,9 +128,15 @@ fn draw_messages(frame: &mut Frame, area: Rect, state: &UiState) {
         .map(|message| {
             let prefix = if message.direct {
                 let target = message.target.as_deref().unwrap_or("me");
+                let marker = if message.encrypted {
+                    "[SECURE]"
+                } else {
+                    "[DM]"
+                };
                 format!(
-                    "{} [DM] {} -> {}: ",
+                    "{} {} {} -> {}: ",
                     short_time(&message.timestamp),
+                    marker,
                     message.from,
                     target
                 )
@@ -192,6 +198,13 @@ fn draw_peers(frame: &mut Frame, area: Rect, state: &UiState) {
                 Span::styled(peer.presence.to_string(), muted_style()),
                 Span::raw(" "),
                 Span::styled(peer.node_id.clone(), muted_style()),
+                Span::raw(" "),
+                Span::styled(
+                    peer.fingerprint.clone().unwrap_or_else(|| "--".into()),
+                    muted_style(),
+                ),
+                Span::raw(" "),
+                Span::styled(peer.trust_status.clone(), muted_style()),
             ]))
         })
         .collect();
@@ -206,8 +219,15 @@ fn draw_peers(frame: &mut Frame, area: Rect, state: &UiState) {
         .iter()
         .map(|message| {
             let target = message.target.as_deref().unwrap_or("me");
+            let marker = if message.encrypted {
+                "[SECURE]"
+            } else {
+                "[DM]"
+            };
             ListItem::new(Line::from(vec![
                 Span::styled(short_time(&message.timestamp), muted_style()),
+                Span::raw(" "),
+                Span::styled(marker, cyan_style()),
                 Span::raw(" "),
                 Span::styled(format!("{} -> {target}", message.from), cyan_style()),
                 Span::raw(": "),
@@ -300,6 +320,7 @@ fn draw_network(frame: &mut Frame, area: Rect, state: &UiState) {
             Span::styled(format_memory(state.diagnostics.memory_kb), value_style()),
         ]),
         Line::from(peer_line(state)),
+        Line::from(security_line(state)),
     ];
 
     if !state.diagnostics.event_counters.is_empty() {
@@ -366,7 +387,11 @@ fn peer_summary(peer: &UiPeer) -> String {
         .latency_ms
         .map(|value| format!("{value}ms"))
         .unwrap_or_else(|| "--".into());
-    format!("{}({},{status},{latency})", peer.callsign, peer.presence)
+    let fp = peer.fingerprint.as_deref().unwrap_or("--");
+    format!(
+        "{}({},{status},{latency},{fp},{})",
+        peer.callsign, peer.presence, peer.trust_status
+    )
 }
 
 fn peer_style(peer: &UiPeer) -> ratatui::style::Style {
@@ -429,4 +454,23 @@ fn format_memory(memory_kb: Option<u64>) -> String {
     memory_kb
         .map(|value| format!("{value}kb"))
         .unwrap_or_else(|| "--".into())
+}
+
+fn security_line(state: &UiState) -> Vec<Span<'_>> {
+    vec![
+        Span::styled("security: ", label_style()),
+        Span::styled(&state.identity_fingerprint, cyan_style()),
+        Span::raw("    "),
+        Span::styled("trusted: ", label_style()),
+        Span::styled(state.trusted_peers.to_string(), value_style()),
+        Span::raw("    "),
+        Span::styled("blocked: ", label_style()),
+        Span::styled(state.blocked_peers.to_string(), value_style()),
+        Span::raw("    "),
+        Span::styled("sessions: ", label_style()),
+        Span::styled(state.secure_sessions.to_string(), value_style()),
+        Span::raw("    "),
+        Span::styled("warnings: ", label_style()),
+        Span::styled(state.security_warnings.to_string(), value_style()),
+    ]
 }

@@ -29,6 +29,7 @@ Tracks:
 - room members;
 - room message history;
 - accepted direct messages.
+- encrypted marker for secure DMs.
 
 Incoming room messages do not switch the local current room. Messages for rooms the local node has not joined are ignored at routing time.
 
@@ -64,6 +65,20 @@ History records include:
 - body;
 - direct/public marker;
 - event marker.
+- encrypted marker.
+
+## Security State
+
+`crates/security`
+
+Tracks:
+
+- persistent local identity from `~/.kaya/identity.toml`;
+- public fingerprint;
+- trust store records from `~/.kaya/trust.toml`;
+- trusted/blocked peer counts;
+- in-memory secure DM sessions;
+- pending secure messages waiting for handshake acceptance.
 
 ## Event-Driven Updates
 
@@ -72,8 +87,9 @@ State mutation happens inside the runtime after validated events:
 ```text
 PacketReceived
   -> dedup
+  -> signature/trust inspection
   -> peer registry
-  -> room routing
+  -> room or secure-session routing
   -> domain events
   -> UI projection
 ```

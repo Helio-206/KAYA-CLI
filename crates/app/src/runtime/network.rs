@@ -1,6 +1,7 @@
 use super::Runtime;
 use kaya_events::KayaEvent;
 use kaya_protocol::{Packet, PacketType};
+use kaya_security::sign_packet;
 use tokio::task::JoinHandle;
 use tracing::{info_span, warn, Instrument};
 
@@ -37,6 +38,17 @@ impl Runtime {
             "node {} initialized as {}",
             self.node_id, self.callsign
         ));
+        if self.identity_created {
+            self.publish(KayaEvent::IdentityCreated {
+                node_id: self.node_id.clone(),
+                fingerprint: self.identity.fingerprint.clone(),
+            });
+        } else {
+            self.publish(KayaEvent::IdentityLoaded {
+                node_id: self.node_id.clone(),
+                fingerprint: self.identity.fingerprint.clone(),
+            });
+        }
         self.publish(KayaEvent::RoomJoined {
             node_id: self.node_id.clone(),
             callsign: self.callsign.clone(),
@@ -76,7 +88,14 @@ impl Runtime {
         .await;
     }
 
-    pub(super) async fn send_packet(&mut self, packet: Packet) {
+    pub(super) async fn send_packet(&mut self, mut packet: Packet) {
+        if let Err(err) = sign_packet(&mut packet, &self.identity) {
+            self.publish(KayaEvent::SecurityWarning {
+                node_id: Some(self.node_id.clone()),
+                message: format!("outgoing packet signing failed: {err}"),
+            });
+            return;
+        }
         let packet_id = packet.packet_id;
         let packet_type = packet.packet_type;
         let span = info_span!("packet.send", %packet_id, packet_type = ?packet_type);

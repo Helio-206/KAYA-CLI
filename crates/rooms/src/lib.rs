@@ -12,6 +12,7 @@ pub struct ChatMessage {
     pub target_node: Option<String>,
     pub body: String,
     pub direct: bool,
+    pub encrypted: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -177,6 +178,7 @@ impl RoomStore {
             target_node: None,
             body: body.into(),
             direct: false,
+            encrypted: false,
         };
         if let Ok(room) = self.room_mut(&self.current_room.clone()) {
             room.messages.push(message.clone());
@@ -197,6 +199,7 @@ impl RoomStore {
             target_node: Some(target_node.into()),
             body: body.into(),
             direct: true,
+            encrypted: false,
         };
         self.direct_messages.push(message.clone());
         message
@@ -236,6 +239,9 @@ impl RoomStore {
             PacketType::RoomMessage => self.observe_room_message(packet),
             PacketType::DirectMessage => self.observe_direct_message(packet),
             PacketType::DmAck
+            | PacketType::DmSessionRequest
+            | PacketType::DmSessionAccept
+            | PacketType::DirectMessageEncrypted
             | PacketType::PresenceUpdate
             | PacketType::Ping
             | PacketType::Pong
@@ -319,6 +325,7 @@ impl RoomStore {
             target_node: None,
             body: body.to_string(),
             direct: false,
+            encrypted: false,
         };
         let room_state = match self.room_mut(&room) {
             Ok(room_state) => room_state,
@@ -345,6 +352,7 @@ impl RoomStore {
             target_node: Some(target.to_string()),
             body: body.to_string(),
             direct: true,
+            encrypted: false,
         };
         self.direct_messages.push(message.clone());
         RouteOutcome::DirectMessage(message)

@@ -153,6 +153,8 @@ pub enum KayaError {
     Protocol(String),
     #[error("transport error: {0}")]
     Transport(String),
+    #[error("security error: {0}")]
+    Security(String),
     #[error("config error: {0}")]
     Config(String),
     #[error("event channel closed: {0}")]

@@ -2,6 +2,11 @@ use super::Runtime;
 use kaya_events::KayaEvent;
 use kaya_protocol::{Packet, PacketType};
 use kaya_rooms::{ChatMessage, RouteOutcome};
+use kaya_security::{
+    encrypted_payload_from_packet, packet_requires_signature_validation,
+    session_accept_from_packet, session_request_from_packet, verify_packet_signature,
+    SignatureStatus, TrustObservation,
+};
 use tracing::{debug, error, info, info_span, Instrument};
 
 impl Runtime {
@@ -23,6 +28,34 @@ impl Runtime {
                 self.ui_state.bytes_tx += bytes as u64;
                 self.ui_state
                     .push_log(format!("tx {packet_type:?} {packet_id} bytes={bytes}"));
+            }
+            KayaEvent::IdentityLoaded {
+                node_id,
+                fingerprint,
+            } => {
+                self.ui_state
+                    .push_log(format!("identity loaded {node_id} {fingerprint}"));
+                self.sync_security_to_ui();
+            }
+            KayaEvent::IdentityCreated {
+                node_id,
+                fingerprint,
+            } => {
+                self.ui_state
+                    .push_log(format!("identity created {node_id} {fingerprint}"));
+                self.system_message(format!("identity fingerprint {fingerprint}"));
+                self.sync_security_to_ui();
+            }
+            KayaEvent::PacketSignatureValid {
+                node_id,
+                fingerprint,
+            } => {
+                self.ui_state
+                    .push_log(format!("signature valid {node_id} {fingerprint}"));
+            }
+            KayaEvent::PacketSignatureInvalid { node_id, reason } => {
+                self.ui_state
+                    .push_log(format!("signature invalid {node_id}: {reason}"));
             }
             KayaEvent::PeerDiscovered { node_id, callsign } => {
                 self.ui_state
@@ -73,6 +106,7 @@ impl Runtime {
                     target_node: None,
                     body,
                     direct: false,
+                    encrypted: false,
                 };
                 self.push_chat_message(&message, local);
                 self.persist_chat_message(&message);
@@ -92,6 +126,27 @@ impl Runtime {
                     target_node: Some(target_node),
                     body,
                     direct: true,
+                    encrypted: false,
+                };
+                self.push_chat_message(&message, local);
+                self.persist_chat_message(&message);
+            }
+            KayaEvent::EncryptedMessageReceived {
+                from_node,
+                from_callsign,
+                target_node,
+                body,
+                local,
+            } => {
+                let message = ChatMessage {
+                    timestamp: kaya_shared::now_millis().to_string(),
+                    room: None,
+                    from_node,
+                    from_callsign,
+                    target_node: Some(target_node),
+                    body,
+                    direct: true,
+                    encrypted: true,
                 };
                 self.push_chat_message(&message, local);
                 self.persist_chat_message(&message);
@@ -109,6 +164,7 @@ impl Runtime {
                     target_node: Some(target_node),
                     body,
                     direct: true,
+                    encrypted: false,
                 };
                 self.push_chat_message(&message, true);
                 self.persist_chat_message(&message);
@@ -129,6 +185,47 @@ impl Runtime {
                         .push_log(format!("presence {callsign} {node_id}: {presence}"));
                 }
                 self.sync_peers_to_ui();
+            }
+            KayaEvent::PeerTrusted {
+                node_id,
+                callsign,
+                fingerprint,
+            } => {
+                self.system_message(format!("trusted {callsign} {node_id} {fingerprint}"));
+                self.sync_peers_to_ui();
+            }
+            KayaEvent::PeerBlocked {
+                node_id,
+                callsign,
+                fingerprint,
+            } => {
+                self.system_message(format!("blocked {callsign} {node_id} {fingerprint}"));
+                self.sync_peers_to_ui();
+            }
+            KayaEvent::SecureSessionStarted {
+                peer_node_id,
+                session_id,
+            } => {
+                self.ui_state
+                    .push_log(format!("secure session active {peer_node_id} {session_id}"));
+                self.system_message(format!("secure session active with {peer_node_id}"));
+                self.sync_security_to_ui();
+            }
+            KayaEvent::SecureSessionClosed {
+                peer_node_id,
+                session_id,
+            } => {
+                let suffix = session_id
+                    .map(|value| format!(" {value}"))
+                    .unwrap_or_default();
+                self.system_message(format!("secure session closed with {peer_node_id}{suffix}"));
+                self.sync_security_to_ui();
+            }
+            KayaEvent::SecurityWarning { node_id, message } => {
+                self.ui_state.security_warnings += 1;
+                let source = node_id.unwrap_or_else(|| "unknown".into());
+                self.ui_state
+                    .push_log(format!("security warning {source}: {message}"));
             }
             KayaEvent::ErrorOccurred { scope, message } => {
                 self.diagnostics.malformed_packets += u64::from(scope == "transport.rx");
@@ -176,9 +273,16 @@ impl Runtime {
                 return;
             }
 
+            if !self.inspect_packet_security(&packet) {
+                return;
+            }
+
             self.observe_peer(&packet);
             self.remember_peer(&packet);
             self.sync_peers_to_ui();
+            if self.route_security_packet(&packet).await {
+                return;
+            }
             self.route_packet(&packet).await;
 
             for packet in self.state_sync_for(&packet) {
@@ -283,6 +387,119 @@ impl Runtime {
         }
     }
 
+    async fn route_security_packet(&mut self, packet: &Packet) -> bool {
+        match packet.packet_type {
+            PacketType::DmSessionRequest => {
+                if !self.packet_targets_local_node(packet) {
+                    return true;
+                }
+                let Ok(request) = session_request_from_packet(packet) else {
+                    self.publish(KayaEvent::SecurityWarning {
+                        node_id: Some(packet.node_id.clone()),
+                        message: "malformed secure session request".into(),
+                    });
+                    return true;
+                };
+                if !self.packet_fingerprint_matches(&packet.node_id, &request.fingerprint) {
+                    return true;
+                }
+                match self.sessions.accept_request(
+                    &packet.node_id,
+                    &request.session_id,
+                    &request.x25519_public_key,
+                    &request.fingerprint,
+                ) {
+                    Ok(accept) => {
+                        self.publish(KayaEvent::SecureSessionStarted {
+                            peer_node_id: packet.node_id.clone(),
+                            session_id: accept.session_id.clone(),
+                        });
+                        self.send_packet(Packet::dm_session_accept(
+                            self.node_id.clone(),
+                            self.callsign.clone(),
+                            packet.node_id.clone(),
+                            accept.session_id,
+                            accept.x25519_public_key,
+                            accept.fingerprint,
+                        ))
+                        .await;
+                    }
+                    Err(err) => self.publish(KayaEvent::SecurityWarning {
+                        node_id: Some(packet.node_id.clone()),
+                        message: err.to_string(),
+                    }),
+                }
+                true
+            }
+            PacketType::DmSessionAccept => {
+                if !self.packet_targets_local_node(packet) {
+                    return true;
+                }
+                let Ok(accept) = session_accept_from_packet(packet) else {
+                    self.publish(KayaEvent::SecurityWarning {
+                        node_id: Some(packet.node_id.clone()),
+                        message: "malformed secure session accept".into(),
+                    });
+                    return true;
+                };
+                if !self.packet_fingerprint_matches(&packet.node_id, &accept.fingerprint) {
+                    return true;
+                }
+                match self.sessions.complete_accept(
+                    &packet.node_id,
+                    &accept.session_id,
+                    &accept.x25519_public_key,
+                    &accept.fingerprint,
+                ) {
+                    Ok(()) => {
+                        self.publish(KayaEvent::SecureSessionStarted {
+                            peer_node_id: packet.node_id.clone(),
+                            session_id: accept.session_id,
+                        });
+                        self.flush_pending_secure_messages(&packet.node_id).await;
+                    }
+                    Err(err) => self.publish(KayaEvent::SecurityWarning {
+                        node_id: Some(packet.node_id.clone()),
+                        message: err.to_string(),
+                    }),
+                }
+                true
+            }
+            PacketType::DirectMessageEncrypted => {
+                if !self.packet_targets_local_node(packet) {
+                    return true;
+                }
+                let Ok(payload) = encrypted_payload_from_packet(packet) else {
+                    self.publish(KayaEvent::SecurityWarning {
+                        node_id: Some(packet.node_id.clone()),
+                        message: "malformed encrypted dm".into(),
+                    });
+                    return true;
+                };
+                if !self.packet_fingerprint_matches(&packet.node_id, &payload.sender_fingerprint) {
+                    return true;
+                }
+                match self.sessions.decrypt(&packet.node_id, &payload) {
+                    Ok(body) => {
+                        self.publish(KayaEvent::EncryptedMessageReceived {
+                            from_node: packet.node_id.clone(),
+                            from_callsign: packet.callsign.clone(),
+                            target_node: self.node_id.clone(),
+                            body,
+                            local: false,
+                        });
+                    }
+                    Err(err) => self.publish(KayaEvent::SecurityWarning {
+                        node_id: Some(packet.node_id.clone()),
+                        message: err.to_string(),
+                    }),
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn publish_room_message(&self, message: ChatMessage) {
         let Some(room) = message.room.clone() else {
             return;
@@ -297,4 +514,97 @@ impl Runtime {
             });
         }
     }
+
+    fn inspect_packet_security(&mut self, packet: &Packet) -> bool {
+        if self.trust_store.is_blocked(&packet.node_id) {
+            self.publish(KayaEvent::SecurityWarning {
+                node_id: Some(packet.node_id.clone()),
+                message: "blocked peer packet rejected".into(),
+            });
+            return false;
+        }
+
+        match verify_packet_signature(packet) {
+            SignatureStatus::Valid { fingerprint } => {
+                self.publish(KayaEvent::PacketSignatureValid {
+                    node_id: packet.node_id.clone(),
+                    fingerprint: fingerprint.clone(),
+                });
+                match self
+                    .trust_store
+                    .record_seen(&packet.node_id, &packet.callsign, &fingerprint)
+                {
+                    Ok(TrustObservation::FingerprintChanged { previous, current }) => {
+                        self.publish(KayaEvent::SecurityWarning {
+                            node_id: Some(packet.node_id.clone()),
+                            message: format!("fingerprint changed {previous} -> {current}"),
+                        });
+                    }
+                    Ok(TrustObservation::New | TrustObservation::Updated) => {}
+                    Err(err) => self.publish(KayaEvent::SecurityWarning {
+                        node_id: Some(packet.node_id.clone()),
+                        message: err.to_string(),
+                    }),
+                }
+                true
+            }
+            SignatureStatus::Missing if secure_packet_requires_signature(packet.packet_type) => {
+                self.publish(KayaEvent::SecurityWarning {
+                    node_id: Some(packet.node_id.clone()),
+                    message: "unsigned secure packet rejected".into(),
+                });
+                false
+            }
+            SignatureStatus::Missing => true,
+            SignatureStatus::Invalid { reason } => {
+                let required = packet_requires_signature_validation(packet.packet_type);
+                self.publish(KayaEvent::PacketSignatureInvalid {
+                    node_id: packet.node_id.clone(),
+                    reason: reason.clone(),
+                });
+                self.publish(KayaEvent::SecurityWarning {
+                    node_id: Some(packet.node_id.clone()),
+                    message: if required {
+                        "invalid required packet signature rejected".into()
+                    } else {
+                        "invalid packet signature rejected".into()
+                    },
+                });
+                false
+            }
+        }
+    }
+
+    fn packet_targets_local_node(&self, packet: &Packet) -> bool {
+        packet.target_node.as_deref() == Some(self.node_id.as_str())
+            || packet
+                .target_node
+                .as_deref()
+                .map(|target| target.eq_ignore_ascii_case(&self.callsign))
+                .unwrap_or(false)
+    }
+
+    fn packet_fingerprint_matches(&self, node_id: &str, fingerprint: &str) -> bool {
+        let matches = self
+            .trust_store
+            .get(node_id)
+            .map(|peer| peer.fingerprint == fingerprint)
+            .unwrap_or(true);
+        if !matches {
+            self.publish(KayaEvent::SecurityWarning {
+                node_id: Some(node_id.to_string()),
+                message: "packet fingerprint does not match signed identity".into(),
+            });
+        }
+        matches
+    }
+}
+
+fn secure_packet_requires_signature(packet_type: PacketType) -> bool {
+    matches!(
+        packet_type,
+        PacketType::DmSessionRequest
+            | PacketType::DmSessionAccept
+            | PacketType::DirectMessageEncrypted
+    )
 }

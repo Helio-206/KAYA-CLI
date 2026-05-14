@@ -8,8 +8,15 @@ The TUI lives in `crates/ui` and uses ratatui with crossterm.
 - Left panel: known rooms and membership counts.
 - Center panel: room chat and system messages.
 - Right panel: current-room members, global peers, and DMs.
-- Network: peers, latency, packet counters, byte counters, uptime, heartbeat, timeout, render timing, memory, event counters, and logs.
+- Network: peers, latency, packet counters, byte counters, uptime, heartbeat, timeout, render timing, memory, event counters, security summary, and logs.
 - Input: command/message entry.
+
+## Security Indicators
+
+- Header/network projection includes the local identity fingerprint.
+- Peer rows include short fingerprints and trust state when available.
+- Encrypted DMs render with a `[SECURE]` marker.
+- The technical panel shows trusted peers, blocked peers, active secure sessions, and security warning count.
 
 ## Controls
 

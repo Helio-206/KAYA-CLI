@@ -28,6 +28,14 @@ cargo test
 - room synchronization and routing;
 - room creation, join, leave, and member snapshots;
 - DM delivery and history filtering;
+- identity generation and identity TOML persistence;
+- fingerprint generation;
+- packet signing and signature validation;
+- invalid signature detection after packet tampering;
+- trust store state transitions and blocked peers;
+- X25519 shared-secret equality through secure DM session setup;
+- encrypted DM decrypt success and tamper failure;
+- secure session lifecycle;
 - transport packet deduplication;
 - config TOML validation.
 
