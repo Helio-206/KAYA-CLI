@@ -1,5 +1,6 @@
 use kaya_shared::{
-    is_valid_node_id, normalize_room, now_millis, MAX_PACKET_BYTES, PROTOCOL_VERSION,
+    is_valid_node_id, normalize_room, now_millis, validate_room_name, PresenceStatus,
+    MAX_PACKET_BYTES, PROTOCOL_VERSION,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -50,8 +51,15 @@ pub enum PacketType {
     Heartbeat,
     Leave,
     JoinRoom,
+    RoomAnnounce,
+    RoomJoin,
+    RoomLeave,
+    RoomMembersRequest,
+    RoomMembersResponse,
     RoomMessage,
     DirectMessage,
+    DmAck,
+    PresenceUpdate,
     Ping,
     Pong,
     System,
@@ -114,6 +122,7 @@ impl Packet {
         node_id: impl Into<String>,
         callsign: impl Into<String>,
         room: impl Into<String>,
+        presence: PresenceStatus,
     ) -> Self {
         Self::new(
             PacketType::Heartbeat,
@@ -121,7 +130,7 @@ impl Packet {
             callsign,
             Some(room.into()),
             None,
-            json!({ "status": "online" }),
+            json!({ "presence": presence.as_str() }),
         )
     }
 
@@ -145,13 +154,82 @@ impl Packet {
         callsign: impl Into<String>,
         room: impl Into<String>,
     ) -> Self {
+        Self::room_join(node_id, callsign, room)
+    }
+
+    pub fn room_announce(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        room: impl Into<String>,
+    ) -> Self {
         Self::new(
-            PacketType::JoinRoom,
+            PacketType::RoomAnnounce,
             node_id,
             callsign,
             Some(room.into()),
             None,
             json!({}),
+        )
+    }
+
+    pub fn room_join(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        room: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            PacketType::RoomJoin,
+            node_id,
+            callsign,
+            Some(room.into()),
+            None,
+            json!({}),
+        )
+    }
+
+    pub fn room_leave(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        room: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            PacketType::RoomLeave,
+            node_id,
+            callsign,
+            Some(room.into()),
+            None,
+            json!({}),
+        )
+    }
+
+    pub fn room_members_request(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        room: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            PacketType::RoomMembersRequest,
+            node_id,
+            callsign,
+            Some(room.into()),
+            None,
+            json!({}),
+        )
+    }
+
+    pub fn room_members_response(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        room: impl Into<String>,
+        members: Vec<String>,
+    ) -> Self {
+        Self::new(
+            PacketType::RoomMembersResponse,
+            node_id,
+            callsign,
+            Some(room.into()),
+            None,
+            json!({ "members": members }),
         )
     }
 
@@ -184,6 +262,38 @@ impl Packet {
             None,
             Some(target_node.into()),
             json!({ "body": body.into() }),
+        )
+    }
+
+    pub fn dm_ack(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        packet_id: Uuid,
+    ) -> Self {
+        Self::new(
+            PacketType::DmAck,
+            node_id,
+            callsign,
+            None,
+            Some(target_node.into()),
+            json!({ "ack": packet_id }),
+        )
+    }
+
+    pub fn presence_update(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        room: impl Into<String>,
+        presence: PresenceStatus,
+    ) -> Self {
+        Self::new(
+            PacketType::PresenceUpdate,
+            node_id,
+            callsign,
+            Some(room.into()),
+            None,
+            json!({ "presence": presence.as_str() }),
         )
     }
 
@@ -256,6 +366,27 @@ impl Packet {
         self.payload.get("message").and_then(Value::as_str)
     }
 
+    pub fn presence(&self) -> Option<PresenceStatus> {
+        self.payload
+            .get("presence")
+            .and_then(Value::as_str)
+            .and_then(PresenceStatus::parse)
+    }
+
+    pub fn members(&self) -> Vec<String> {
+        self.payload
+            .get("members")
+            .and_then(Value::as_array)
+            .map(|members| {
+                members
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToString::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub fn validate(&self) -> ProtocolResult<()> {
         if self.protocol_version != PROTOCOL_VERSION {
             return Err(ProtocolError::UnsupportedVersion {
@@ -297,15 +428,23 @@ impl Packet {
             | PacketType::Heartbeat
             | PacketType::Leave
             | PacketType::JoinRoom
+            | PacketType::RoomAnnounce
+            | PacketType::RoomJoin
+            | PacketType::RoomLeave
+            | PacketType::RoomMembersRequest
+            | PacketType::RoomMembersResponse
+            | PacketType::PresenceUpdate
             | PacketType::RoomMessage => {
-                if self.room.as_deref().unwrap_or_default().trim().is_empty() {
+                let room = self.room.as_deref().unwrap_or_default();
+                if room.trim().is_empty() {
                     return Err(ProtocolError::MissingField {
                         packet_type: self.packet_type,
                         field: "room",
                     });
                 }
+                validate_room_name(room).map_err(|err| ProtocolError::Decode(err.to_string()))?;
             }
-            PacketType::DirectMessage | PacketType::Ping | PacketType::Pong => {
+            PacketType::DirectMessage | PacketType::DmAck | PacketType::Ping | PacketType::Pong => {
                 if self
                     .target_node
                     .as_deref()
@@ -328,6 +467,13 @@ impl Packet {
         ) && self.body().unwrap_or_default().trim().is_empty()
         {
             return Err(ProtocolError::EmptyMessageBody);
+        }
+
+        if self.packet_type == PacketType::PresenceUpdate && self.presence().is_none() {
+            return Err(ProtocolError::MissingField {
+                packet_type: self.packet_type,
+                field: "payload.presence",
+            });
         }
 
         Ok(())
@@ -400,7 +546,7 @@ mod tests {
     fn packet_type_uses_expected_json_names() {
         let packet = Packet::join_room("KY-71AF92", "Helio", "semana-info");
         let value: Value = serde_json::from_slice(&encode(&packet).unwrap()).unwrap();
-        assert_eq!(value["type"], "JOIN_ROOM");
+        assert_eq!(value["type"], "ROOM_JOIN");
     }
 
     #[test]
@@ -429,6 +575,42 @@ mod tests {
         assert!(matches!(
             decode_with_limit(&bytes, 8),
             Err(ProtocolError::PacketTooLarge { max: 8, actual: 32 })
+        ));
+    }
+
+    #[test]
+    fn phase_two_packets_validate() {
+        let packets = [
+            Packet::room_announce("KY-71AF92", "Helio", "semana-info"),
+            Packet::room_join("KY-71AF92", "Helio", "semana-info"),
+            Packet::room_leave("KY-71AF92", "Helio", "semana-info"),
+            Packet::room_members_request("KY-71AF92", "Helio", "semana-info"),
+            Packet::room_members_response(
+                "KY-71AF92",
+                "Helio",
+                "semana-info",
+                vec!["KY-71AF92".into()],
+            ),
+            Packet::presence_update("KY-71AF92", "Helio", "semana-info", PresenceStatus::Busy),
+        ];
+
+        for packet in packets {
+            packet.validate().expect("phase two packet validates");
+        }
+    }
+
+    #[test]
+    fn presence_update_requires_valid_presence() {
+        let mut packet =
+            Packet::presence_update("KY-71AF92", "Helio", "geral", PresenceStatus::Online);
+        packet.payload = json!({ "presence": "sleeping" });
+
+        assert!(matches!(
+            packet.validate(),
+            Err(ProtocolError::MissingField {
+                field: "payload.presence",
+                ..
+            })
         ));
     }
 }

@@ -69,11 +69,25 @@ transport -> PacketReceived -> runtime -> peer/rooms -> domain events -> UI proj
 - `HELLO`: announces a node.
 - `HEARTBEAT`: refreshes peer presence.
 - `JOIN_ROOM`: adds a node to a room.
+- `ROOM_ANNOUNCE`: advertises known rooms.
+- `ROOM_JOIN` / `ROOM_LEAVE`: synchronizes lightweight room membership.
+- `ROOM_MEMBERS_REQUEST` / `ROOM_MEMBERS_RESPONSE`: reconciles a light member snapshot.
 - `ROOM_MESSAGE`: routes public text to a room.
 - `DIRECT_MESSAGE`: routes private text to a target node id or callsign.
 - `LEAVE`: marks a peer offline.
+- `PRESENCE_UPDATE`: updates peer presence.
 - `PING`/`PONG`: reserved for latency measurement.
 
 ## Phase 1 Boundaries
 
 Phase 1 intentionally avoids centralized identity, encryption, store-and-forward relays, and internet fallback. The design keeps these future additions behind protocol and transport boundaries.
+
+## Phase 2 Social Sync
+
+Phase 2 adds a light social synchronization layer:
+
+- rooms can be created, announced, joined, and left;
+- peers exchange room membership snapshots on join/hello;
+- DMs resolve callsigns to node ids and reject ambiguous callsigns;
+- presence is tracked as `online`, `away`, `busy`, `invisible`, or derived `offline`;
+- local history stores room messages and DMs through the persistence crate.

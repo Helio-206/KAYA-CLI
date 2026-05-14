@@ -1,4 +1,4 @@
-use kaya_shared::{normalize_room, KayaError, Result};
+use kaya_shared::{validate_room_name, KayaError, PresenceStatus, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParsedInput {
@@ -12,9 +12,15 @@ pub enum Command {
     Help,
     Who,
     Rooms,
+    Create { room: String },
     Join { room: String },
-    Room { room: Option<String> },
+    Leave { room: String },
+    Current,
+    RoomMessage { body: String },
     Msg { target: String, body: String },
+    Presence { status: PresenceStatus },
+    History { room: Option<String> },
+    DmHistory { peer: String },
     Status,
     Logs,
     Clear,
@@ -26,9 +32,15 @@ pub enum CommandKind {
     Help,
     Who,
     Rooms,
+    Create,
     Join,
-    Room,
+    Leave,
+    Current,
+    RoomMessage,
     Msg,
+    Presence,
+    History,
+    DmHistory,
     Status,
     Logs,
     Clear,
@@ -57,7 +69,7 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         name: "who",
         aliases: &["peers"],
         usage: "/who",
-        description: "list discovered peers",
+        description: "list discovered peers and presence",
     },
     CommandSpec {
         kind: CommandKind::Rooms,
@@ -67,18 +79,39 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         description: "list known rooms",
     },
     CommandSpec {
+        kind: CommandKind::Create,
+        name: "create",
+        aliases: &[],
+        usage: "/create <room>",
+        description: "create and announce a room",
+    },
+    CommandSpec {
         kind: CommandKind::Join,
         name: "join",
         aliases: &["j"],
         usage: "/join <room>",
-        description: "join or create a room",
+        description: "join a room",
     },
     CommandSpec {
-        kind: CommandKind::Room,
+        kind: CommandKind::Leave,
+        name: "leave",
+        aliases: &["part"],
+        usage: "/leave <room>",
+        description: "leave a room",
+    },
+    CommandSpec {
+        kind: CommandKind::Current,
+        name: "current",
+        aliases: &["here"],
+        usage: "/current",
+        description: "show current room",
+    },
+    CommandSpec {
+        kind: CommandKind::RoomMessage,
         name: "room",
-        aliases: &[],
-        usage: "/room [room]",
-        description: "show or switch current room",
+        aliases: &["say"],
+        usage: "/room <message>",
+        description: "send a message to the current room",
     },
     CommandSpec {
         kind: CommandKind::Msg,
@@ -86,6 +119,27 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         aliases: &["dm"],
         usage: "/msg <callsign|node-id> <message>",
         description: "send a direct message",
+    },
+    CommandSpec {
+        kind: CommandKind::Presence,
+        name: "presence",
+        aliases: &["p"],
+        usage: "/presence <online|away|busy|invisible>",
+        description: "update local presence",
+    },
+    CommandSpec {
+        kind: CommandKind::History,
+        name: "history",
+        aliases: &[],
+        usage: "/history [room]",
+        description: "show local room history",
+    },
+    CommandSpec {
+        kind: CommandKind::DmHistory,
+        name: "dm-history",
+        aliases: &["dmhistory"],
+        usage: "/dm-history <peer>",
+        description: "show local DM history with a peer",
     },
     CommandSpec {
         kind: CommandKind::Status,
@@ -179,17 +233,47 @@ impl CommandRegistry {
             CommandKind::Help => Ok(Command::Help),
             CommandKind::Who => Ok(Command::Who),
             CommandKind::Rooms => Ok(Command::Rooms),
-            CommandKind::Join => {
-                let room = first_arg(args)
-                    .ok_or_else(|| KayaError::InvalidCommand(format!("usage: {}", spec.usage)))?;
-                Ok(Command::Join {
-                    room: normalize_room(room),
+            CommandKind::Create => Ok(Command::Create {
+                room: parse_room_arg(args, spec.usage)?,
+            }),
+            CommandKind::Join => Ok(Command::Join {
+                room: parse_room_arg(args, spec.usage)?,
+            }),
+            CommandKind::Leave => Ok(Command::Leave {
+                room: parse_room_arg(args, spec.usage)?,
+            }),
+            CommandKind::Current => Ok(Command::Current),
+            CommandKind::RoomMessage => {
+                let body = args.trim();
+                if body.is_empty() {
+                    return Err(KayaError::InvalidCommand(format!("usage: {}", spec.usage)));
+                }
+                Ok(Command::RoomMessage {
+                    body: body.to_string(),
                 })
             }
-            CommandKind::Room => Ok(Command::Room {
-                room: first_arg(args).map(normalize_room),
-            }),
             CommandKind::Msg => parse_msg_command(args, spec.usage),
+            CommandKind::Presence => {
+                let Some(status) = first_arg(args).and_then(PresenceStatus::parse) else {
+                    return Err(KayaError::InvalidCommand(format!("usage: {}", spec.usage)));
+                };
+                if status == PresenceStatus::Offline {
+                    return Err(KayaError::InvalidCommand(
+                        "presence cannot be set to offline manually".into(),
+                    ));
+                }
+                Ok(Command::Presence { status })
+            }
+            CommandKind::History => Ok(Command::History {
+                room: first_arg(args).map(validate_room_name).transpose()?,
+            }),
+            CommandKind::DmHistory => {
+                let peer = first_arg(args)
+                    .ok_or_else(|| KayaError::InvalidCommand(format!("usage: {}", spec.usage)))?;
+                Ok(Command::DmHistory {
+                    peer: peer.to_string(),
+                })
+            }
             CommandKind::Status => Ok(Command::Status),
             CommandKind::Logs => Ok(Command::Logs),
             CommandKind::Clear => Ok(Command::Clear),
@@ -215,6 +299,12 @@ fn split_name_and_args(input: &str) -> (&str, &str) {
 
 fn first_arg(args: &str) -> Option<&str> {
     args.split_whitespace().next()
+}
+
+fn parse_room_arg(args: &str, usage: &str) -> Result<String> {
+    let room =
+        first_arg(args).ok_or_else(|| KayaError::InvalidCommand(format!("usage: {usage}")))?;
+    validate_room_name(room)
 }
 
 fn parse_msg_command(args: &str, usage: &str) -> Result<Command> {
@@ -258,6 +348,30 @@ mod tests {
     }
 
     #[test]
+    fn parses_new_phase_two_commands() {
+        let registry = CommandRegistry::default();
+
+        assert_eq!(
+            registry.parse("/create semana-info").unwrap(),
+            ParsedInput::Command(Command::Create {
+                room: "semana-info".into()
+            })
+        );
+        assert_eq!(
+            registry.parse("/presence busy").unwrap(),
+            ParsedInput::Command(Command::Presence {
+                status: PresenceStatus::Busy
+            })
+        );
+        assert_eq!(
+            registry.parse("/room sistema online").unwrap(),
+            ParsedInput::Command(Command::RoomMessage {
+                body: "sistema online".into()
+            })
+        );
+    }
+
+    #[test]
     fn parses_aliases_from_registry() {
         let registry = CommandRegistry::default();
 
@@ -280,10 +394,16 @@ mod tests {
     }
 
     #[test]
+    fn rejects_invalid_presence() {
+        assert!(parse_input("/presence asleep").is_err());
+        assert!(parse_input("/presence offline").is_err());
+    }
+
+    #[test]
     fn generates_help_from_specs() {
         let help = help_text();
         assert!(help.contains("/join <room>"));
-        assert!(help.contains("send a direct message"));
+        assert!(help.contains("/presence <online|away|busy|invisible>"));
     }
 
     #[test]

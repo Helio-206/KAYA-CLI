@@ -25,11 +25,26 @@ Tracks:
 
 - current local room;
 - known rooms;
+- whether the local node joined each room;
 - room members;
 - room message history;
 - accepted direct messages.
 
-Incoming room messages do not switch the local current room.
+Incoming room messages do not switch the local current room. Messages for rooms the local node has not joined are ignored at routing time.
+
+## Presence State
+
+`crates/peer`
+
+Peers carry presence:
+
+- `online`
+- `away`
+- `busy`
+- `invisible`
+- `offline`
+
+`offline` is derived from `LEAVE` or heartbeat timeout.
 
 ## Persistence
 
@@ -40,6 +55,15 @@ Stores:
 - `~/.kaya/config.toml`;
 - sled history records;
 - sled known-peer cache.
+
+History records include:
+
+- timestamp;
+- room or DM target;
+- sender;
+- body;
+- direct/public marker;
+- event marker.
 
 ## Event-Driven Updates
 

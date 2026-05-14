@@ -50,3 +50,12 @@
 - Lab simulator.
 - Scripted scenarios.
 - Distribution packages.
+
+## Phase 2A: Social Synchronization
+
+- Room creation, join, leave, membership snapshots.
+- Room announcements and light state reconciliation.
+- Robust DM target resolution with duplicate callsign detection.
+- Presence states: online, away, busy, invisible, derived offline.
+- Local room and DM history commands.
+- TUI rooms/members/peers/DM panels.

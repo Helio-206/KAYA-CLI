@@ -22,10 +22,13 @@ Default capacity:
 - `PeerTimedOut`
 - `PacketReceived`
 - `PacketSent`
+- `RoomCreated`
 - `RoomJoined`
 - `RoomLeft`
 - `RoomMessageReceived`
+- `DirectMessageSent`
 - `DirectMessageReceived`
+- `PresenceUpdated`
 - `ErrorOccurred`
 - `NetworkStarted`
 - `ShutdownInitiated`

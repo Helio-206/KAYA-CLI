@@ -4,6 +4,7 @@ const MAX_COMMAND_HISTORY: usize = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UiMessage {
+    pub timestamp: String,
     pub room: Option<String>,
     pub from: String,
     pub target: Option<String>,
@@ -16,8 +17,17 @@ pub struct UiMessage {
 pub struct UiPeer {
     pub node_id: String,
     pub callsign: String,
+    pub presence: kaya_shared::PresenceStatus,
     pub online: bool,
     pub latency_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiRoom {
+    pub name: String,
+    pub member_count: usize,
+    pub joined: bool,
+    pub current: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -42,8 +52,12 @@ pub struct UiState {
     pub callsign: String,
     pub status: String,
     pub current_room: String,
+    pub presence: kaya_shared::PresenceStatus,
     pub input: String,
     pub messages: Vec<UiMessage>,
+    pub direct_messages: Vec<UiMessage>,
+    pub rooms: Vec<UiRoom>,
+    pub current_members: Vec<String>,
     pub peers: Vec<UiPeer>,
     pub logs: Vec<String>,
     pub show_logs: bool,
@@ -70,8 +84,12 @@ impl UiState {
             callsign: callsign.into(),
             status: "CONNECTED".into(),
             current_room: room,
+            presence: kaya_shared::PresenceStatus::Online,
             input: String::new(),
             messages: Vec::new(),
+            direct_messages: Vec::new(),
+            rooms: Vec::new(),
+            current_members: Vec::new(),
             peers: Vec::new(),
             logs: Vec::new(),
             show_logs: true,
@@ -87,10 +105,18 @@ impl UiState {
     }
 
     pub fn push_message(&mut self, message: UiMessage) {
-        self.messages.push(message);
-        if self.messages.len() > MAX_MESSAGES {
-            let overflow = self.messages.len() - MAX_MESSAGES;
-            self.messages.drain(0..overflow);
+        if message.direct {
+            self.direct_messages.push(message.clone());
+            if self.direct_messages.len() > MAX_MESSAGES {
+                let overflow = self.direct_messages.len() - MAX_MESSAGES;
+                self.direct_messages.drain(0..overflow);
+            }
+        } else {
+            self.messages.push(message);
+            if self.messages.len() > MAX_MESSAGES {
+                let overflow = self.messages.len() - MAX_MESSAGES;
+                self.messages.drain(0..overflow);
+            }
         }
     }
 

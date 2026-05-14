@@ -1,7 +1,7 @@
 use crate::theme::{
     blue_style, connected_style, cyan_style, label_style, muted_style, value_style,
 };
-use crate::{UiPeer, UiState};
+use crate::{UiPeer, UiRoom, UiState};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, Wrap};
@@ -40,7 +40,7 @@ pub(crate) fn draw_frame(frame: &mut Frame, state: &UiState) {
         .split(frame.area());
 
     draw_header(frame, chunks[0], state);
-    draw_messages(frame, chunks[1], state);
+    draw_social(frame, chunks[1], state);
     draw_network(frame, chunks[2], state);
     draw_input(frame, chunks[3], state);
 }
@@ -64,10 +64,56 @@ fn draw_header(frame: &mut Frame, area: Rect, state: &UiState) {
         Line::from(vec![
             Span::styled("STATUS: ", label_style()),
             Span::styled(&state.status, connected_style()),
+            Span::raw("    "),
+            Span::styled("PRESENCE: ", label_style()),
+            Span::styled(state.presence.to_string(), cyan_style()),
         ]),
     ];
 
     frame.render_widget(Paragraph::new(lines).block(kaya_block(" KAYA ")), area);
+}
+
+fn draw_social(frame: &mut Frame, area: Rect, state: &UiState) {
+    if area.width < 90 {
+        draw_messages(frame, area, state);
+        return;
+    }
+
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(24),
+            Constraint::Min(32),
+            Constraint::Length(30),
+        ])
+        .split(area);
+
+    draw_rooms(frame, chunks[0], state);
+    draw_messages(frame, chunks[1], state);
+    draw_peers(frame, chunks[2], state);
+}
+
+fn draw_rooms(frame: &mut Frame, area: Rect, state: &UiState) {
+    let items: Vec<ListItem> = state
+        .rooms
+        .iter()
+        .map(|room| {
+            let marker = if room.current {
+                ">"
+            } else if room.joined {
+                "*"
+            } else {
+                " "
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(marker, cyan_style()),
+                Span::raw(" #"),
+                Span::styled(room.name.clone(), room_style(room)),
+                Span::styled(format!(" ({})", room.member_count), muted_style()),
+            ]))
+        })
+        .collect();
+    frame.render_widget(List::new(items).block(kaya_block(" ROOMS ")), area);
 }
 
 fn draw_messages(frame: &mut Frame, area: Rect, state: &UiState) {
@@ -82,10 +128,16 @@ fn draw_messages(frame: &mut Frame, area: Rect, state: &UiState) {
         .map(|message| {
             let prefix = if message.direct {
                 let target = message.target.as_deref().unwrap_or("me");
-                format!("[DM] {} -> {}: ", message.from, target)
+                format!(
+                    "{} [DM] {} -> {}: ",
+                    short_time(&message.timestamp),
+                    message.from,
+                    target
+                )
             } else {
                 format!(
-                    "[#{}] {}: ",
+                    "{} [#{}] {}: ",
+                    short_time(&message.timestamp),
                     message.room.as_deref().unwrap_or("geral"),
                     message.from
                 )
@@ -103,11 +155,67 @@ fn draw_messages(frame: &mut Frame, area: Rect, state: &UiState) {
         .collect();
 
     let title = if state.message_scroll == 0 {
-        " TRAFFIC "
+        " CHAT "
     } else {
-        " TRAFFIC scroll "
+        " CHAT scroll "
     };
     frame.render_widget(List::new(items).block(kaya_block(title)), area);
+}
+
+fn draw_peers(frame: &mut Frame, area: Rect, state: &UiState) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(38),
+            Constraint::Percentage(32),
+            Constraint::Percentage(30),
+        ])
+        .split(area);
+
+    let member_items: Vec<ListItem> = state
+        .current_members
+        .iter()
+        .map(|member| ListItem::new(Line::from(Span::styled(member.clone(), value_style()))))
+        .collect();
+    frame.render_widget(
+        List::new(member_items).block(kaya_block(" MEMBERS ")),
+        chunks[0],
+    );
+
+    let peer_items: Vec<ListItem> = state
+        .peers
+        .iter()
+        .map(|peer| {
+            ListItem::new(Line::from(vec![
+                Span::styled(peer.callsign.clone(), peer_style(peer)),
+                Span::raw(" "),
+                Span::styled(peer.presence.to_string(), muted_style()),
+                Span::raw(" "),
+                Span::styled(peer.node_id.clone(), muted_style()),
+            ]))
+        })
+        .collect();
+    frame.render_widget(
+        List::new(peer_items).block(kaya_block(" PEERS ")),
+        chunks[1],
+    );
+
+    let visible_height = chunks[2].height.saturating_sub(2) as usize;
+    let start = state.direct_messages.len().saturating_sub(visible_height);
+    let dm_items: Vec<ListItem> = state.direct_messages[start..]
+        .iter()
+        .map(|message| {
+            let target = message.target.as_deref().unwrap_or("me");
+            ListItem::new(Line::from(vec![
+                Span::styled(short_time(&message.timestamp), muted_style()),
+                Span::raw(" "),
+                Span::styled(format!("{} -> {target}", message.from), cyan_style()),
+                Span::raw(": "),
+                Span::raw(message.body.clone()),
+            ]))
+        })
+        .collect();
+    frame.render_widget(List::new(dm_items).block(kaya_block(" DMS ")), chunks[2]);
 }
 
 fn draw_network(frame: &mut Frame, area: Rect, state: &UiState) {
@@ -258,7 +366,7 @@ fn peer_summary(peer: &UiPeer) -> String {
         .latency_ms
         .map(|value| format!("{value}ms"))
         .unwrap_or_else(|| "--".into());
-    format!("{}({status},{latency})", peer.callsign)
+    format!("{}({},{status},{latency})", peer.callsign, peer.presence)
 }
 
 fn peer_style(peer: &UiPeer) -> ratatui::style::Style {
@@ -267,6 +375,24 @@ fn peer_style(peer: &UiPeer) -> ratatui::style::Style {
     } else {
         muted_style()
     }
+}
+
+fn room_style(room: &UiRoom) -> ratatui::style::Style {
+    if room.current {
+        cyan_style()
+    } else if room.joined {
+        value_style()
+    } else {
+        muted_style()
+    }
+}
+
+fn short_time(timestamp: &str) -> String {
+    let Ok(ms) = timestamp.parse::<u64>() else {
+        return "--:--".into();
+    };
+    let secs = (ms / 1000) % 86_400;
+    format!("{:02}:{:02}", secs / 3600, (secs % 3600) / 60)
 }
 
 fn event_counter_line(state: &UiState) -> Vec<Span<'_>> {

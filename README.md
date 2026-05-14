@@ -123,9 +123,15 @@ KAYA callsign: Bruno
 - `/help`
 - `/who`
 - `/rooms`
+- `/create <room>`
 - `/join <room>`
-- `/room [room]`
+- `/leave <room>`
+- `/current`
+- `/room <message>`
 - `/msg <callsign|node-id> <message>`
+- `/presence <online|away|busy|invisible>`
+- `/history [room]`
+- `/dm-history <peer>`
 - `/status`
 - `/logs`
 - `/clear`
@@ -158,6 +164,10 @@ cargo test
 - [LAB-02 room sync](labs/LAB-02-room-sync.md)
 - [LAB-03 private messaging](labs/LAB-03-private-messaging.md)
 - [LAB-04 node failure](labs/LAB-04-node-failure.md)
+- [LAB-06 room membership](labs/LAB-06-room-membership.md)
+- [LAB-07 direct messages](labs/LAB-07-direct-messages.md)
+- [LAB-08 presence](labs/LAB-08-presence.md)
+- [LAB-09 history](labs/LAB-09-history.md)
 - [Packet loss](labs/packet-loss.md)
 - [Peer timeout](labs/peer-timeout.md)
 - [Malformed packets](labs/malformed-packets.md)

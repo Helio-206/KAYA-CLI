@@ -1,5 +1,5 @@
 use kaya_protocol::{Packet, PacketType};
-use kaya_shared::PEER_TIMEOUT_SECS;
+use kaya_shared::{PresenceStatus, PEER_TIMEOUT_SECS};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -11,6 +11,7 @@ pub struct Peer {
     pub rooms: HashSet<String>,
     pub last_seen: Instant,
     pub latency_ms: Option<u64>,
+    pub presence: PresenceStatus,
     pub online: bool,
 }
 
@@ -20,6 +21,7 @@ pub struct PeerSnapshot {
     pub callsign: String,
     pub rooms: Vec<String>,
     pub latency_ms: Option<u64>,
+    pub presence: PresenceStatus,
     pub online: bool,
 }
 
@@ -29,6 +31,17 @@ pub enum PeerEvent {
     Updated(String),
     Left(String),
     TimedOut(String),
+    PresenceChanged(String, PresenceStatus),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TargetResolution {
+    Found(PeerSnapshot),
+    NotFound(String),
+    DuplicateCallsign {
+        callsign: String,
+        matches: Vec<String>,
+    },
 }
 
 #[derive(Debug)]
@@ -77,6 +90,7 @@ impl PeerRegistry {
                 rooms: HashSet::new(),
                 last_seen: now,
                 latency_ms: None,
+                presence: PresenceStatus::Online,
                 online: true,
             }
         });
@@ -84,12 +98,28 @@ impl PeerRegistry {
         peer.callsign = packet.callsign.clone();
         peer.last_seen = now;
         peer.online = true;
-        if let Some(room) = &packet.room {
+        let old_presence = peer.presence;
+        if let Some(presence) = packet.presence() {
+            peer.presence = presence;
+            peer.online = presence != PresenceStatus::Offline;
+        } else if packet.packet_type == PacketType::Heartbeat {
+            peer.presence = PresenceStatus::Online;
+        }
+        if packet.packet_type == PacketType::RoomLeave {
+            if let Some(room) = &packet.room {
+                peer.rooms.remove(room);
+            }
+        } else if let Some(room) = &packet.room {
             peer.rooms.insert(room.clone());
         }
 
         if discovered {
             Some(PeerEvent::Discovered(peer.node_id.clone()))
+        } else if old_presence != peer.presence {
+            Some(PeerEvent::PresenceChanged(
+                peer.node_id.clone(),
+                peer.presence,
+            ))
         } else {
             Some(PeerEvent::Updated(peer.node_id.clone()))
         }
@@ -98,6 +128,7 @@ impl PeerRegistry {
     pub fn mark_left(&mut self, node_id: &str) -> Option<PeerEvent> {
         let peer = self.peers.get_mut(node_id)?;
         peer.online = false;
+        peer.presence = PresenceStatus::Offline;
         Some(PeerEvent::Left(node_id.to_string()))
     }
 
@@ -110,6 +141,7 @@ impl PeerRegistry {
         for peer in self.peers.values_mut() {
             if peer.online && now.duration_since(peer.last_seen) > self.timeout {
                 peer.online = false;
+                peer.presence = PresenceStatus::Offline;
                 events.push(PeerEvent::TimedOut(peer.node_id.clone()));
             }
         }
@@ -124,6 +156,31 @@ impl PeerRegistry {
         })
     }
 
+    pub fn resolve_target_checked(&self, target: &str) -> TargetResolution {
+        if let Some(peer) = self.peers.get(target) {
+            return TargetResolution::Found(snapshot_for(peer));
+        }
+
+        let matches: Vec<_> = self
+            .peers
+            .values()
+            .filter(|peer| peer.callsign.eq_ignore_ascii_case(target) && peer.online)
+            .map(snapshot_for)
+            .collect();
+
+        match matches.len() {
+            0 => TargetResolution::NotFound(target.to_string()),
+            1 => {
+                let mut matches = matches;
+                TargetResolution::Found(matches.remove(0))
+            }
+            _ => TargetResolution::DuplicateCallsign {
+                callsign: target.to_string(),
+                matches: matches.into_iter().map(|peer| peer.node_id).collect(),
+            },
+        }
+    }
+
     pub fn snapshots(&self) -> Vec<PeerSnapshot> {
         let mut peers: Vec<_> = self
             .peers
@@ -136,6 +193,7 @@ impl PeerRegistry {
                     callsign: peer.callsign.clone(),
                     rooms,
                     latency_ms: peer.latency_ms,
+                    presence: peer.presence,
                     online: peer.online,
                 }
             })
@@ -150,6 +208,19 @@ impl PeerRegistry {
 
     pub fn get(&self, node_id: &str) -> Option<&Peer> {
         self.peers.get(node_id)
+    }
+}
+
+fn snapshot_for(peer: &Peer) -> PeerSnapshot {
+    let mut rooms: Vec<_> = peer.rooms.iter().cloned().collect();
+    rooms.sort();
+    PeerSnapshot {
+        node_id: peer.node_id.clone(),
+        callsign: peer.callsign.clone(),
+        rooms,
+        latency_ms: peer.latency_ms,
+        presence: peer.presence,
+        online: peer.online,
     }
 }
 
@@ -182,12 +253,48 @@ mod tests {
     fn marks_peer_offline_after_timeout() {
         let start = Instant::now();
         let mut registry = PeerRegistry::with_timeout("KY-000001", Duration::from_secs(2));
-        let packet = Packet::heartbeat("KY-71AF92", "Ana", "geral");
+        let packet = Packet::heartbeat("KY-71AF92", "Ana", "geral", PresenceStatus::Online);
 
         registry.observe_packet_at(&packet, start);
         let events = registry.prune_at(start + Duration::from_secs(3));
 
         assert_eq!(events, vec![PeerEvent::TimedOut("KY-71AF92".into())]);
         assert!(!registry.get("KY-71AF92").unwrap().online);
+    }
+
+    #[test]
+    fn detects_duplicate_callsigns() {
+        let mut registry = PeerRegistry::new("KY-000001");
+        registry.observe_packet(&Packet::hello("KY-71AF92", "Ana", "geral"));
+        registry.observe_packet(&Packet::hello("KY-AAAAAA", "Ana", "geral"));
+
+        assert!(matches!(
+            registry.resolve_target_checked("Ana"),
+            TargetResolution::DuplicateCallsign { .. }
+        ));
+    }
+
+    #[test]
+    fn tracks_presence_updates() {
+        let mut registry = PeerRegistry::new("KY-000001");
+        registry.observe_packet(&Packet::hello("KY-71AF92", "Ana", "geral"));
+        let event = registry.observe_packet(&Packet::presence_update(
+            "KY-71AF92",
+            "Ana",
+            "geral",
+            PresenceStatus::Busy,
+        ));
+
+        assert_eq!(
+            event,
+            Some(PeerEvent::PresenceChanged(
+                "KY-71AF92".into(),
+                PresenceStatus::Busy
+            ))
+        );
+        assert_eq!(
+            registry.get("KY-71AF92").unwrap().presence,
+            PresenceStatus::Busy
+        );
     }
 }

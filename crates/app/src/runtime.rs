@@ -8,7 +8,7 @@ use kaya_commands::CommandRegistry;
 use kaya_events::{EventBus, KayaEvent};
 use kaya_peer::PeerRegistry;
 use kaya_persistence::{ConfigStore, KayaConfig, Store};
-use kaya_shared::Result;
+use kaya_shared::{PresenceStatus, Result};
 use kaya_transport::{MulticastTransport, PacketDeduplicator};
 use kaya_ui::{TerminalUi, UiState};
 use std::time::{Duration, Instant};
@@ -31,6 +31,7 @@ pub struct Runtime {
     commands: CommandRegistry,
     ui_state: UiState,
     diagnostics: RuntimeDiagnostics,
+    presence: PresenceStatus,
     dedup: PacketDeduplicator,
     network_task: Option<JoinHandle<()>>,
 }
@@ -46,7 +47,9 @@ impl Runtime {
         bus: EventBus,
     ) -> Self {
         let mut rooms = kaya_rooms::RoomStore::new(&node_id, &callsign);
-        rooms.join(config.active_room());
+        if rooms.join(config.active_room()).is_err() {
+            let _ = rooms.join(kaya_shared::DEFAULT_ROOM);
+        }
 
         let diagnostics = RuntimeDiagnostics::new(
             config.heartbeat_interval_secs,
@@ -73,6 +76,7 @@ impl Runtime {
             commands: CommandRegistry::default(),
             ui_state,
             diagnostics,
+            presence: PresenceStatus::Online,
             dedup: PacketDeduplicator::new(4096),
             network_task: None,
         }

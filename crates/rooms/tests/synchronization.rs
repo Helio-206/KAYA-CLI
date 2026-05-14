@@ -24,9 +24,6 @@ fn room_messages_do_not_switch_local_current_room() {
     let mut store = RoomStore::new("KY-000001", "Helio");
     let packet = Packet::room_message("KY-71AF92", "Ana", "ops", "ping");
 
-    assert!(matches!(
-        store.route_packet(&packet),
-        RouteOutcome::RoomMessage(_)
-    ));
+    assert_eq!(store.route_packet(&packet), RouteOutcome::Ignored);
     assert_eq!(store.current_room(), "geral");
 }

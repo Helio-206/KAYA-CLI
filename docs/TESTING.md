@@ -18,11 +18,16 @@ cargo test
 
 - command registry, aliases, and validation;
 - protocol encode/decode and hardening;
+- Phase 2 room and presence packet validation;
 - malformed packet rejection;
 - fuzz-like invalid protocol inputs;
 - event bus delivery and counters;
 - peer timeout and duplicate updates;
+- duplicate callsign detection;
+- presence update handling;
 - room synchronization and routing;
+- room creation, join, leave, and member snapshots;
+- DM delivery and history filtering;
 - transport packet deduplication;
 - config TOML validation.
 

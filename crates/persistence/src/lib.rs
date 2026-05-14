@@ -134,9 +134,13 @@ impl Default for ConfigStore {
 pub struct HistoryRecord {
     pub timestamp: String,
     pub room: Option<String>,
+    #[serde(default)]
+    pub target: Option<String>,
     pub from: String,
     pub body: String,
     pub direct: bool,
+    #[serde(default)]
+    pub event: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -176,6 +180,40 @@ impl Store {
             let (_, value) = item.map_err(|err| KayaError::Storage(err.to_string()))?;
             records.push(serde_json::from_slice(&value)?);
         }
+        if records.len() > limit {
+            records = records.split_off(records.len() - limit);
+        }
+        Ok(records)
+    }
+
+    pub fn list_room_history(&self, room: &str, limit: usize) -> Result<Vec<HistoryRecord>> {
+        let room = kaya_shared::validate_room_name(room)?;
+        let mut records: Vec<_> = self
+            .list_history(usize::MAX)?
+            .into_iter()
+            .filter(|record| record.room.as_deref() == Some(room.as_str()) && !record.direct)
+            .collect();
+        if records.len() > limit {
+            records = records.split_off(records.len() - limit);
+        }
+        Ok(records)
+    }
+
+    pub fn list_dm_history(&self, peer: &str, limit: usize) -> Result<Vec<HistoryRecord>> {
+        let peer = peer.to_ascii_lowercase();
+        let mut records: Vec<_> = self
+            .list_history(usize::MAX)?
+            .into_iter()
+            .filter(|record| {
+                record.direct
+                    && (record.from.eq_ignore_ascii_case(&peer)
+                        || record
+                            .target
+                            .as_deref()
+                            .map(|target| target.eq_ignore_ascii_case(&peer))
+                            .unwrap_or(false))
+            })
+            .collect();
         if records.len() > limit {
             records = records.split_off(records.len() - limit);
         }
@@ -254,13 +292,50 @@ mod tests {
         let record = HistoryRecord {
             timestamp: now_millis().to_string(),
             room: Some("geral".into()),
+            target: None,
             from: "Ana".into(),
             body: "recebido".into(),
             direct: false,
+            event: false,
         };
 
         store.append_history(&record).unwrap();
         assert_eq!(store.list_history(10).unwrap(), vec![record]);
+
+        drop(store);
+        let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn filters_room_and_dm_history() {
+        let (store, path) = test_store();
+        let room_record = HistoryRecord {
+            timestamp: now_millis().to_string(),
+            room: Some("geral".into()),
+            target: None,
+            from: "Ana".into(),
+            body: "sala".into(),
+            direct: false,
+            event: false,
+        };
+        let dm_record = HistoryRecord {
+            timestamp: (now_millis() + 1).to_string(),
+            room: None,
+            target: Some("Helio".into()),
+            from: "Bruno".into(),
+            body: "dm".into(),
+            direct: true,
+            event: false,
+        };
+
+        store.append_history(&room_record).unwrap();
+        store.append_history(&dm_record).unwrap();
+
+        assert_eq!(
+            store.list_room_history("geral", 10).unwrap(),
+            vec![room_record]
+        );
+        assert_eq!(store.list_dm_history("Bruno", 10).unwrap(), vec![dm_record]);
 
         drop(store);
         let _ = fs::remove_dir_all(path);

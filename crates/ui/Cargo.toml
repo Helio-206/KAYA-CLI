@@ -7,4 +7,5 @@ authors.workspace = true
 
 [dependencies]
 crossterm.workspace = true
+kaya-shared = { path = "../shared" }
 ratatui.workspace = true

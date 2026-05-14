@@ -13,6 +13,7 @@ pub const MIN_PACKET_BYTES: usize = 2;
 pub const PEER_TIMEOUT_SECS: u64 = 12;
 pub const HEARTBEAT_INTERVAL_SECS: u64 = 3;
 pub const EVENT_CHANNEL_CAPACITY: usize = 1024;
+pub const MAX_ROOM_NAME_LEN: usize = 48;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NodeId(String);
@@ -76,8 +77,70 @@ pub fn normalize_room(room: &str) -> String {
     room.trim().trim_start_matches('#').to_ascii_lowercase()
 }
 
+pub fn validate_room_name(room: &str) -> Result<String> {
+    let room = normalize_room(room);
+    if room.is_empty() {
+        return Err(KayaError::InvalidRoomName(
+            "room name cannot be empty".into(),
+        ));
+    }
+    if room.len() > MAX_ROOM_NAME_LEN {
+        return Err(KayaError::InvalidRoomName(format!(
+            "room name cannot exceed {MAX_ROOM_NAME_LEN} characters"
+        )));
+    }
+    if !room
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+    {
+        return Err(KayaError::InvalidRoomName(format!(
+            "room name contains invalid characters: {room}"
+        )));
+    }
+    Ok(room)
+}
+
 pub fn normalize_callsign(callsign: &str) -> String {
     callsign.trim().to_string()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PresenceStatus {
+    Online,
+    Away,
+    Busy,
+    Invisible,
+    Offline,
+}
+
+impl PresenceStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PresenceStatus::Online => "online",
+            PresenceStatus::Away => "away",
+            PresenceStatus::Busy => "busy",
+            PresenceStatus::Invisible => "invisible",
+            PresenceStatus::Offline => "offline",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "online" => Some(Self::Online),
+            "away" => Some(Self::Away),
+            "busy" => Some(Self::Busy),
+            "invisible" => Some(Self::Invisible),
+            "offline" => Some(Self::Offline),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for PresenceStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 #[derive(Debug, Error)]
@@ -96,6 +159,8 @@ pub enum KayaError {
     ChannelClosed(String),
     #[error("invalid KAYA command: {0}")]
     InvalidCommand(String),
+    #[error("invalid room name: {0}")]
+    InvalidRoomName(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("json error: {0}")]
@@ -128,5 +193,18 @@ mod tests {
     #[test]
     fn normalizes_room_names() {
         assert_eq!(normalize_room(" #Semana-Info "), "semana-info");
+    }
+
+    #[test]
+    fn validates_room_names() {
+        assert_eq!(validate_room_name("#Semana-Info").unwrap(), "semana-info");
+        assert!(validate_room_name("bad room").is_err());
+        assert!(validate_room_name("").is_err());
+    }
+
+    #[test]
+    fn parses_presence_status() {
+        assert_eq!(PresenceStatus::parse("busy"), Some(PresenceStatus::Busy));
+        assert_eq!(PresenceStatus::Busy.to_string(), "busy");
     }
 }

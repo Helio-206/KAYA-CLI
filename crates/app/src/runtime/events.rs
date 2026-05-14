@@ -37,6 +37,21 @@ impl Runtime {
                 room,
                 local,
             } => self.apply_room_joined(node_id, callsign, room, local),
+            KayaEvent::RoomCreated {
+                node_id,
+                callsign,
+                room,
+                local,
+            } => {
+                if local {
+                    self.ui_state.push_log(format!("created room #{room}"));
+                    self.system_message(format!("created #{room}"));
+                } else {
+                    self.ui_state
+                        .push_log(format!("peer {callsign} {node_id} announced #{room}"));
+                }
+                self.sync_peers_to_ui();
+            }
             KayaEvent::RoomLeft { node_id, room } => {
                 let room = room
                     .map(|value| format!(" from #{value}"))
@@ -51,6 +66,7 @@ impl Runtime {
                 local,
             } => {
                 let message = ChatMessage {
+                    timestamp: kaya_shared::now_millis().to_string(),
                     room: Some(room),
                     from_node,
                     from_callsign,
@@ -69,6 +85,7 @@ impl Runtime {
                 local,
             } => {
                 let message = ChatMessage {
+                    timestamp: kaya_shared::now_millis().to_string(),
                     room: None,
                     from_node,
                     from_callsign,
@@ -78,6 +95,40 @@ impl Runtime {
                 };
                 self.push_chat_message(&message, local);
                 self.persist_chat_message(&message);
+            }
+            KayaEvent::DirectMessageSent {
+                target_node,
+                target_callsign,
+                body,
+            } => {
+                let message = ChatMessage {
+                    timestamp: kaya_shared::now_millis().to_string(),
+                    room: None,
+                    from_node: self.node_id.clone(),
+                    from_callsign: self.callsign.clone(),
+                    target_node: Some(target_node),
+                    body,
+                    direct: true,
+                };
+                self.push_chat_message(&message, true);
+                self.persist_chat_message(&message);
+                self.ui_state
+                    .push_log(format!("dm sent to {target_callsign}"));
+            }
+            KayaEvent::PresenceUpdated {
+                node_id,
+                callsign,
+                presence,
+            } => {
+                if node_id == self.node_id {
+                    self.presence = presence;
+                    self.ui_state.presence = presence;
+                    self.system_message(format!("presence set to {presence}"));
+                } else {
+                    self.ui_state
+                        .push_log(format!("presence {callsign} {node_id}: {presence}"));
+                }
+                self.sync_peers_to_ui();
             }
             KayaEvent::ErrorOccurred { scope, message } => {
                 self.diagnostics.malformed_packets += u64::from(scope == "transport.rx");
@@ -130,8 +181,8 @@ impl Runtime {
             self.sync_peers_to_ui();
             self.route_packet(&packet).await;
 
-            if let Some(pong) = self.pong_for(&packet) {
-                self.send_packet(pong).await;
+            for packet in self.state_sync_for(&packet) {
+                self.send_packet(packet).await;
             }
         }
         .instrument(span)
@@ -148,6 +199,7 @@ impl Runtime {
             self.ui_state
                 .push_log(format!("peer {callsign} {node_id} present in #{room}"));
         }
+        self.sync_peers_to_ui();
     }
 
     fn observe_peer(&mut self, packet: &Packet) {
@@ -167,13 +219,23 @@ impl Runtime {
                     body: message.body,
                     local: false,
                 });
+                self.send_packet(Packet::dm_ack(
+                    self.node_id.clone(),
+                    self.callsign.clone(),
+                    packet.node_id.clone(),
+                    packet.packet_id,
+                ))
+                .await;
             }
             RouteOutcome::Joined {
                 node_id,
                 callsign,
                 room,
             } => {
-                if matches!(packet.packet_type, PacketType::Hello | PacketType::JoinRoom) {
+                if matches!(
+                    packet.packet_type,
+                    PacketType::Hello | PacketType::JoinRoom | PacketType::RoomJoin
+                ) {
                     self.publish(KayaEvent::RoomJoined {
                         node_id,
                         callsign,
@@ -182,8 +244,40 @@ impl Runtime {
                     });
                 }
             }
+            RouteOutcome::RoomCreated {
+                node_id,
+                callsign,
+                room,
+            } => {
+                self.publish(KayaEvent::RoomCreated {
+                    node_id,
+                    callsign,
+                    room,
+                    local: false,
+                });
+                self.sync_peers_to_ui();
+            }
             RouteOutcome::Left { node_id, room } => {
                 self.publish(KayaEvent::RoomLeft { node_id, room });
+            }
+            RouteOutcome::MembersRequested { node_id, room } => {
+                if self.rooms.is_joined(&room) {
+                    self.send_packet(Packet::room_members_response(
+                        self.node_id.clone(),
+                        self.callsign.clone(),
+                        room.clone(),
+                        self.rooms.members(&room),
+                    ))
+                    .await;
+                } else {
+                    self.ui_state
+                        .push_log(format!("ignored members request from {node_id}"));
+                }
+            }
+            RouteOutcome::MembersResponse { room, members } => {
+                self.ui_state
+                    .push_log(format!("synced {} members for #{room}", members.len()));
+                self.sync_peers_to_ui();
             }
             RouteOutcome::Ignored => {}
         }

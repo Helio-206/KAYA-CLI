@@ -49,7 +49,26 @@ impl Runtime {
             self.rooms.current_room().to_string(),
         ))
         .await;
-        self.send_packet(Packet::join_room(
+        self.send_packet(Packet::presence_update(
+            self.node_id.clone(),
+            self.callsign.clone(),
+            self.rooms.current_room().to_string(),
+            self.presence,
+        ))
+        .await;
+        self.send_packet(Packet::room_announce(
+            self.node_id.clone(),
+            self.callsign.clone(),
+            self.rooms.current_room().to_string(),
+        ))
+        .await;
+        self.send_packet(Packet::room_join(
+            self.node_id.clone(),
+            self.callsign.clone(),
+            self.rooms.current_room().to_string(),
+        ))
+        .await;
+        self.send_packet(Packet::room_members_request(
             self.node_id.clone(),
             self.callsign.clone(),
             self.rooms.current_room().to_string(),
@@ -101,6 +120,18 @@ impl Runtime {
                 node_id,
                 room: None,
             }),
+            kaya_peer::PeerEvent::PresenceChanged(node_id, presence) => {
+                let callsign = self
+                    .peers
+                    .get(&node_id)
+                    .map(|peer| peer.callsign.clone())
+                    .unwrap_or_default();
+                self.publish(KayaEvent::PresenceUpdated {
+                    node_id,
+                    callsign,
+                    presence,
+                });
+            }
             kaya_peer::PeerEvent::Updated(_) => {}
         }
     }
@@ -110,6 +141,7 @@ impl Runtime {
             self.node_id.clone(),
             self.callsign.clone(),
             self.rooms.current_room().to_string(),
+            self.presence,
         )
     }
 
@@ -121,14 +153,48 @@ impl Runtime {
         )
     }
 
-    pub(super) fn pong_for(&self, packet: &Packet) -> Option<Packet> {
-        (packet.packet_type == PacketType::Hello).then(|| {
+    pub(super) fn state_sync_for(&self, packet: &Packet) -> Vec<Packet> {
+        if packet.packet_type != PacketType::Hello {
+            return Vec::new();
+        }
+
+        let mut packets = vec![
             Packet::pong(
                 self.node_id.clone(),
                 self.callsign.clone(),
                 packet.node_id.clone(),
                 packet.packet_id,
-            )
-        })
+            ),
+            Packet::presence_update(
+                self.node_id.clone(),
+                self.callsign.clone(),
+                self.rooms.current_room().to_string(),
+                self.presence,
+            ),
+            Packet::room_join(
+                self.node_id.clone(),
+                self.callsign.clone(),
+                self.rooms.current_room().to_string(),
+            ),
+        ];
+
+        for room in self.rooms.summaries() {
+            let room_name = room.name.clone();
+            packets.push(Packet::room_announce(
+                self.node_id.clone(),
+                self.callsign.clone(),
+                room_name.clone(),
+            ));
+            if room.local_joined {
+                packets.push(Packet::room_members_response(
+                    self.node_id.clone(),
+                    self.callsign.clone(),
+                    room_name.clone(),
+                    self.rooms.members(&room_name),
+                ));
+            }
+        }
+
+        packets
     }
 }

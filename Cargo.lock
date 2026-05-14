@@ -465,6 +465,7 @@ name = "kaya-ui"
 version = "0.1.0"
 dependencies = [
  "crossterm",
+ "kaya-shared",
  "ratatui",
 ]
 

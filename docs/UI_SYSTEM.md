@@ -5,7 +5,9 @@ The TUI lives in `crates/ui` and uses ratatui with crossterm.
 ## Panels
 
 - Header: space, current room, node id, callsign, status.
-- Traffic: room messages, DMs, and local system messages.
+- Left panel: known rooms and membership counts.
+- Center panel: room chat and system messages.
+- Right panel: current-room members, global peers, and DMs.
 - Network: peers, latency, packet counters, byte counters, uptime, heartbeat, timeout, render timing, memory, event counters, and logs.
 - Input: command/message entry.
 
