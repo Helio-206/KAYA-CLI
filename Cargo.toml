@@ -3,6 +3,7 @@ members = [
     "crates/app",
     "crates/commands",
     "crates/core",
+    "crates/direct",
     "crates/events",
     "crates/files",
     "crates/mesh",

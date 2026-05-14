@@ -10,7 +10,7 @@ use kaya_security::{
     session_accept_from_packet, session_request_from_packet, verify_packet_signature,
     SignatureStatus, TrustObservation,
 };
-use tracing::{debug, error, info, info_span, Instrument};
+use tracing::{debug, error, info, info_span, warn, Instrument};
 
 impl Runtime {
     pub(super) async fn handle_event(&mut self, event: KayaEvent) {
@@ -31,6 +31,69 @@ impl Runtime {
                 self.ui_state.bytes_tx += bytes as u64;
                 self.ui_state
                     .push_log(format!("tx {packet_type:?} {packet_id} bytes={bytes}"));
+            }
+            KayaEvent::DirectListenerStarted { addr } => {
+                info!(%addr, "DIRECT_LISTENER_STARTED");
+                self.ui_state
+                    .push_log(format!("direct listener started {addr}"));
+                self.system_message(format!("listening for direct peers on {addr}"));
+                self.sync_direct_to_ui();
+            }
+            KayaEvent::DirectListenerStopped { addr } => {
+                let addr = addr.unwrap_or_else(|| "--".into());
+                info!(%addr, "DIRECT_LISTENER_STOPPED");
+                self.ui_state
+                    .push_log(format!("direct listener stopped {addr}"));
+                self.system_message("direct listener stopped");
+                self.sync_direct_to_ui();
+            }
+            KayaEvent::DirectPeerConnected {
+                node_id,
+                callsign,
+                addr,
+            } => {
+                info!(%node_id, %callsign, %addr, "DIRECT_PEER_CONNECTED");
+                self.ui_state
+                    .push_log(format!("direct peer connected {callsign} {node_id} {addr}"));
+                self.system_message(format!("[DIRECT] Connected to {callsign} {node_id}"));
+                self.sync_direct_to_ui();
+            }
+            KayaEvent::DirectPeerDisconnected { node_id, reason } => {
+                info!(%node_id, reason = ?reason, "DIRECT_PEER_DISCONNECTED");
+                self.ui_state.push_log(format!(
+                    "direct peer disconnected {node_id}: {}",
+                    reason.unwrap_or_else(|| "closed".into())
+                ));
+                self.sync_direct_to_ui();
+            }
+            KayaEvent::DirectConnectFailed { address, reason } => {
+                warn!(%address, %reason, "DIRECT_CONNECT_FAILED");
+                self.ui_state
+                    .push_log(format!("direct connect failed {address}: {reason}"));
+                self.system_message(format!("direct connect failed {address}: {reason}"));
+            }
+            KayaEvent::DirectPacketReceived {
+                node_id,
+                packet_id,
+                packet_type,
+                source,
+                bytes,
+            } => {
+                self.ui_state.push_log(format!(
+                    "direct rx {packet_type:?} {packet_id} from {node_id} source={source} bytes={bytes}"
+                ));
+            }
+            KayaEvent::DirectPacketSent {
+                node_id,
+                packet_id,
+                packet_type,
+                bytes,
+            } => {
+                self.ui_state.packets_tx += 1;
+                self.ui_state.bytes_tx += bytes as u64;
+                self.ui_state.push_log(format!(
+                    "direct tx {packet_type:?} {packet_id} to {node_id} bytes={bytes}"
+                ));
             }
             KayaEvent::IdentityLoaded {
                 node_id,
@@ -472,7 +535,12 @@ impl Runtime {
         }
     }
 
-    async fn handle_packet_received(&mut self, packet: Packet, source: String, bytes: usize) {
+    pub(super) async fn handle_packet_received(
+        &mut self,
+        packet: Packet,
+        source: String,
+        bytes: usize,
+    ) {
         self.ui_state.packets_rx += 1;
         self.ui_state.bytes_rx += bytes as u64;
 

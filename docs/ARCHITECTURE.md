@@ -8,17 +8,19 @@ KAYA is a modular Rust workspace designed around strict separation of responsibi
 2. The user chooses a callsign.
 3. `security` loads or creates `~/.kaya/identity.toml`.
 4. `transport` binds an IPv4 multicast UDP socket.
-5. The network reader task emits `PacketReceived` events.
-6. Incoming datagrams are decoded by `protocol`.
-7. The runtime deduplicates packet ids.
-8. `security` verifies signed packet envelopes and applies block rules.
-9. `peer` updates presence and timeout state.
-10. `rooms` routes room messages and plaintext DMs.
-11. Secure DM packets are routed through `security` session state.
-12. Mesh route packets are handled by `mesh` before domain routing.
-13. File packets are routed through `files` transfer state.
-14. Domain events update the UI projection.
-15. `persistence` records config, known peers, and basic history.
+5. `direct` can start a manual TCP listener or connector from TUI commands.
+6. The network reader task emits `PacketReceived` events.
+7. Direct TCP session tasks emit direct runtime events and packet events.
+8. Incoming packets are decoded by `protocol`.
+9. The runtime deduplicates packet ids.
+10. `security` verifies signed packet envelopes and applies block rules.
+11. `peer` updates presence and timeout state.
+12. `rooms` routes room messages and plaintext DMs.
+13. Secure DM packets are routed through `security` session state.
+14. Mesh route packets are handled by `mesh` before domain routing.
+15. File packets are routed through `files` transfer state.
+16. Domain events update the UI projection.
+17. `persistence` records config, known peers, and basic history.
 
 ## Crates
 
@@ -37,6 +39,10 @@ Defines the JSON packet contract, packet types, constructors, encode/decode help
 ### transport
 
 Owns UDP multicast socket setup. Uses `socket2` so multiple KAYA processes can bind the same multicast port during local labs.
+
+### direct
+
+Owns manual TCP peer connectivity: listener startup, outbound connector, length-prefixed framing, HELLO handshake validation, connection views, and diagnostics. The runtime keeps direct session senders and routes targeted packets through direct TCP before multicast, mesh, or relay.
 
 ### peer
 
@@ -79,7 +85,7 @@ Common constants, node id generation, errors, timestamps, and normalization help
 KAYA uses packet-driven state behind an internal event bus:
 
 ```text
-transport -> PacketReceived -> runtime -> peer/rooms -> domain events -> UI projection
+transport/direct -> packet event -> runtime -> peer/rooms/security/files/mesh -> domain events -> UI projection
 ```
 
 - `HELLO`: announces a node.
@@ -144,3 +150,16 @@ Phase 5 keeps UDP multicast as the local transport and adds an experimental rela
 - file offers and accept/reject/cancel/error packets can cross mesh;
 - file chunks over mesh are explicitly rejected for this phase;
 - TTL, route trace, duplicate suppression, and block policy prevent basic loops and abuse.
+
+## Direct Connectivity Layer
+
+Direct connectivity is a small TCP layer that complements multicast:
+
+- `/listen <port>` binds a TCP listener on all interfaces;
+- `/connect <ip>:<port>` dials a peer, including Tailscale `100.x.x.x` addresses;
+- both sides exchange signed `HELLO` packets with fingerprints and capabilities;
+- direct sessions are registered in the same peer/security state as multicast discovery;
+- targeted packets prefer `direct_tcp` before multicast, mesh, or relay;
+- room, presence, and route-announcement packets are mirrored to active direct sessions.
+
+This layer exists to make KAYA usable on VPNs, Tailscale, firewalled LANs, and future WAN-adjacent experiments without replacing the offline-first multicast path.

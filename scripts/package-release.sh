@@ -49,6 +49,7 @@ install -m 0644 README.md LICENSE Cargo.toml "${staging_dir}/"
 install -m 0644 \
     docs/COMMANDS.md \
     docs/DEMO_MODE.md \
+    docs/DIRECT_CONNECT.md \
     docs/DISTRIBUTION.md \
     docs/INSTALLATION.md \
     docs/NGROK.md \
@@ -56,6 +57,7 @@ install -m 0644 \
     docs/RELAY_SECURITY.md \
     docs/SDK.md \
     docs/SECURITY.md \
+    docs/TAILSCALE.md \
     docs/VERSIONING.md \
     docs/WAN_RELAY.md \
     docs/FRIEND_QUICKSTART.md \

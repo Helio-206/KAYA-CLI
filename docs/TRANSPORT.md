@@ -1,6 +1,6 @@
 # KAYA Transport
 
-KAYA Phase 1 uses IPv4 UDP multicast for local peer discovery and message fanout.
+KAYA uses IPv4 UDP multicast for local peer discovery and message fanout. It also supports manual direct TCP sessions for VPNs, Tailscale, corporate networks, and other environments where multicast is blocked.
 
 ## Defaults
 
@@ -24,14 +24,34 @@ Important properties:
 - multicast loopback is enabled so multiple terminals on the same machine can see each other.
 - multicast TTL is `1` to keep traffic local.
 
+## Direct TCP
+
+Direct TCP is started manually from the TUI:
+
+```text
+> /listen 7777
+> /connect 100.81.167.95:7777
+```
+
+Direct TCP uses length-prefixed JSON packet frames. The handshake exchanges signed `HELLO` packets and advertises capabilities such as `encrypted_dm`, `file_transfer`, `mesh`, and `direct_tcp`.
+
+Targeted packet route priority is:
+
+1. direct TCP;
+2. multicast direct peer;
+3. mesh;
+4. relay.
+
+Room, presence, and route-announcement packets are still sent over multicast and mirrored to active direct TCP peers. This keeps LAN behavior intact while making Tailscale and VPN operation reliable.
+
 ## Packet Lifecycle
 
 ```text
 Packet
   -> protocol validation
   -> JSON encode
-  -> UDP multicast send
-  -> UDP receive
+  -> UDP multicast send or direct TCP frame
+  -> UDP receive or direct TCP frame receive
   -> packet size check
   -> JSON decode
   -> protocol validation
@@ -47,3 +67,5 @@ Malformed datagrams are rejected by the transport/protocol boundary and publishe
 ## Graceful Shutdown
 
 On `/exit`, the runtime broadcasts a `LEAVE` packet before aborting the network reader task.
+
+Active direct TCP sessions are closed during shutdown. `/stop-listener` stops only the listener; existing direct sessions remain active until `/disconnect <peer>` or `/exit`.

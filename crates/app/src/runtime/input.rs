@@ -82,6 +82,12 @@ impl Runtime {
             Command::RelayConnect { url } => self.connect_relay_command(&url).await,
             Command::RelayDisconnect => self.disconnect_relay_command(),
             Command::RelayMode { mode } => self.set_relay_mode(mode),
+            Command::Listen { port } => self.start_direct_listener(port).await,
+            Command::Connect { address } => self.connect_direct(&address).await,
+            Command::Disconnect { peer } => self.disconnect_direct(&peer),
+            Command::Connections => self.show_direct_connections(),
+            Command::StopListener => self.stop_direct_listener(),
+            Command::ListenStatus => self.show_direct_listener_status(),
             Command::MeshStatus => self.show_mesh_status(),
             Command::MeshClear => self.clear_mesh(),
             Command::History { room } => self.show_history(room.as_deref()),
@@ -541,10 +547,11 @@ impl Runtime {
 
     fn show_status(&mut self) {
         self.system_message(format!(
-            "node={} room=#{} peers={} routes={} relay_connected={} relay_peers={} packets_tx={} packets_rx={} events={} secure_sessions={} profile={} demo={}",
+            "node={} room=#{} peers={} direct={} routes={} relay_connected={} relay_peers={} packets_tx={} packets_rx={} events={} secure_sessions={} profile={} demo={}",
             self.node_id,
             self.rooms.current_room(),
             self.peers.online_count(),
+            self.direct_connections.len(),
             self.mesh.table.len(),
             self.relay_connected,
             self.relay_peers.len(),

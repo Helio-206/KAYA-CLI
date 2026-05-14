@@ -26,6 +26,12 @@ impl Runtime {
     }
 
     pub(super) async fn send_packet_routed(&mut self, mut packet: Packet, destination_node: &str) {
+        if self.direct_peer_connected(destination_node)
+            && self.send_packet_via_direct_tcp(destination_node, &mut packet)
+        {
+            return;
+        }
+
         if self.direct_peer_online(destination_node) {
             self.send_packet(packet).await;
             return;

@@ -697,6 +697,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "kaya-commands",
+ "kaya-direct",
  "kaya-events",
  "kaya-files",
  "kaya-mesh",
@@ -744,6 +745,19 @@ dependencies = [
  "tempfile",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "kaya-direct"
+version = "0.1.0"
+dependencies = [
+ "kaya-protocol",
+ "kaya-shared",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

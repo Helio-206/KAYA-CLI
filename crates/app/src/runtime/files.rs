@@ -425,12 +425,15 @@ impl Runtime {
                             file_id: file_id.clone(),
                             path: Some(path_string),
                         });
-                        self.send_packet(Packet::file_transfer_complete(
-                            self.node_id.clone(),
-                            self.callsign.clone(),
-                            packet.node_id.clone(),
-                            file_id.clone(),
-                        ))
+                        self.send_packet_routed(
+                            Packet::file_transfer_complete(
+                                self.node_id.clone(),
+                                self.callsign.clone(),
+                                packet.node_id.clone(),
+                                file_id.clone(),
+                            ),
+                            &packet.node_id,
+                        )
                         .await;
                     }
                     Err(err) => self.publish(KayaEvent::FileTransferFailed {
@@ -455,23 +458,29 @@ impl Runtime {
                     file_id: file_id.clone(),
                     reason: err.to_string(),
                 });
-                self.send_packet(Packet::file_transfer_error(
-                    self.node_id.clone(),
-                    self.callsign.clone(),
-                    packet.node_id.clone(),
-                    file_id.clone(),
-                    err.to_string(),
-                ))
+                self.send_packet_routed(
+                    Packet::file_transfer_error(
+                        self.node_id.clone(),
+                        self.callsign.clone(),
+                        packet.node_id.clone(),
+                        file_id.clone(),
+                        err.to_string(),
+                    ),
+                    &packet.node_id,
+                )
                 .await;
             }
         }
-        self.send_packet(Packet::file_chunk_ack(
-            self.node_id.clone(),
-            self.callsign.clone(),
-            packet.node_id.clone(),
-            file_id,
-            chunk_index,
-        ))
+        self.send_packet_routed(
+            Packet::file_chunk_ack(
+                self.node_id.clone(),
+                self.callsign.clone(),
+                packet.node_id.clone(),
+                file_id,
+                chunk_index,
+            ),
+            &packet.node_id,
+        )
         .await;
         self.sync_files_to_ui();
     }
@@ -533,11 +542,12 @@ impl Runtime {
     }
 
     async fn send_file_chunks(&mut self, file_id: &str, peer_node_id: &str) {
-        if self
-            .peers
-            .get(peer_node_id)
-            .map(|peer| !peer.online)
-            .unwrap_or(true)
+        if !self.direct_peer_connected(peer_node_id)
+            && self
+                .peers
+                .get(peer_node_id)
+                .map(|peer| !peer.online)
+                .unwrap_or(true)
         {
             let reason = "file chunks over mesh not enabled yet".to_string();
             let _ = self.files.fail(file_id, reason.clone());
@@ -580,22 +590,25 @@ impl Runtime {
                     .encrypt_file_chunk(peer_node_id, &chunk.payload)
                 {
                     Ok(payload) => {
-                        self.send_packet(Packet::file_chunk_encrypted(
-                            self.node_id.clone(),
-                            self.callsign.clone(),
-                            peer_node_id.to_string(),
-                            FileEncryptedChunkPayload {
-                                file_id: chunk.file_id.clone(),
-                                chunk_index: chunk.chunk_index,
-                                total_chunks: chunk.total_chunks,
-                                chunk_hash: chunk.chunk_hash,
-                                session_id: payload.session_id,
-                                nonce: payload.nonce,
-                                ciphertext: payload.ciphertext,
-                                sender_fingerprint: payload.sender_fingerprint,
-                                timestamp: payload.timestamp,
-                            },
-                        ))
+                        self.send_packet_routed(
+                            Packet::file_chunk_encrypted(
+                                self.node_id.clone(),
+                                self.callsign.clone(),
+                                peer_node_id.to_string(),
+                                FileEncryptedChunkPayload {
+                                    file_id: chunk.file_id.clone(),
+                                    chunk_index: chunk.chunk_index,
+                                    total_chunks: chunk.total_chunks,
+                                    chunk_hash: chunk.chunk_hash,
+                                    session_id: payload.session_id,
+                                    nonce: payload.nonce,
+                                    ciphertext: payload.ciphertext,
+                                    sender_fingerprint: payload.sender_fingerprint,
+                                    timestamp: payload.timestamp,
+                                },
+                            ),
+                            peer_node_id,
+                        )
                         .await;
                     }
                     Err(err) => {
@@ -604,19 +617,22 @@ impl Runtime {
                     }
                 }
             } else {
-                self.send_packet(Packet::file_chunk(
-                    self.node_id.clone(),
-                    self.callsign.clone(),
-                    peer_node_id.to_string(),
-                    FileChunkPayload {
-                        file_id: chunk.file_id,
-                        chunk_index: chunk.chunk_index,
-                        total_chunks: chunk.total_chunks,
-                        chunk_hash: chunk.chunk_hash,
-                        payload: kaya_security::encode_hex(&chunk.payload),
-                        timestamp: chunk.timestamp,
-                    },
-                ))
+                self.send_packet_routed(
+                    Packet::file_chunk(
+                        self.node_id.clone(),
+                        self.callsign.clone(),
+                        peer_node_id.to_string(),
+                        FileChunkPayload {
+                            file_id: chunk.file_id,
+                            chunk_index: chunk.chunk_index,
+                            total_chunks: chunk.total_chunks,
+                            chunk_hash: chunk.chunk_hash,
+                            payload: kaya_security::encode_hex(&chunk.payload),
+                            timestamp: chunk.timestamp,
+                        },
+                    ),
+                    peer_node_id,
+                )
                 .await;
             }
         }

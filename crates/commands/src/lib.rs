@@ -50,6 +50,12 @@ pub enum Command {
     RelayConnect { url: String },
     RelayDisconnect,
     RelayMode { mode: Option<String> },
+    Listen { port: u16 },
+    Connect { address: String },
+    Disconnect { peer: String },
+    Connections,
+    StopListener,
+    ListenStatus,
     MeshStatus,
     MeshClear,
     History { room: Option<String> },
@@ -103,6 +109,12 @@ pub enum CommandKind {
     RelayConnect,
     RelayDisconnect,
     RelayMode,
+    Listen,
+    Connect,
+    Disconnect,
+    Connections,
+    StopListener,
+    ListenStatus,
     MeshStatus,
     MeshClear,
     History,
@@ -411,6 +423,48 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         description: "show or change relay room bridging mode",
     },
     CommandSpec {
+        kind: CommandKind::Listen,
+        name: "listen",
+        aliases: &[],
+        usage: "/listen <port>",
+        description: "start a direct TCP peer listener",
+    },
+    CommandSpec {
+        kind: CommandKind::Connect,
+        name: "connect",
+        aliases: &["dial"],
+        usage: "/connect <ip>:<port>",
+        description: "open a direct TCP peer connection",
+    },
+    CommandSpec {
+        kind: CommandKind::Disconnect,
+        name: "disconnect",
+        aliases: &["hangup"],
+        usage: "/disconnect <callsign|node-id>",
+        description: "close a direct TCP peer connection",
+    },
+    CommandSpec {
+        kind: CommandKind::Connections,
+        name: "connections",
+        aliases: &["conns"],
+        usage: "/connections",
+        description: "list direct TCP peer connections",
+    },
+    CommandSpec {
+        kind: CommandKind::StopListener,
+        name: "stop-listener",
+        aliases: &[],
+        usage: "/stop-listener",
+        description: "stop the direct TCP listener",
+    },
+    CommandSpec {
+        kind: CommandKind::ListenStatus,
+        name: "listen-status",
+        aliases: &[],
+        usage: "/listen-status",
+        description: "show direct TCP listener status",
+    },
+    CommandSpec {
         kind: CommandKind::MeshStatus,
         name: "mesh-status",
         aliases: &["mesh"],
@@ -632,6 +686,18 @@ impl CommandRegistry {
             CommandKind::RelayMode => Ok(Command::RelayMode {
                 mode: first_arg(args).map(str::to_string),
             }),
+            CommandKind::Listen => Ok(Command::Listen {
+                port: parse_port_arg(args, spec.usage)?,
+            }),
+            CommandKind::Connect => Ok(Command::Connect {
+                address: parse_peer_arg(args, spec.usage)?.to_string(),
+            }),
+            CommandKind::Disconnect => Ok(Command::Disconnect {
+                peer: parse_peer_arg(args, spec.usage)?.to_string(),
+            }),
+            CommandKind::Connections => Ok(Command::Connections),
+            CommandKind::StopListener => Ok(Command::StopListener),
+            CommandKind::ListenStatus => Ok(Command::ListenStatus),
             CommandKind::MeshStatus => Ok(Command::MeshStatus),
             CommandKind::MeshClear => Ok(Command::MeshClear),
             CommandKind::History => Ok(Command::History {
@@ -683,6 +749,20 @@ fn parse_count_arg(args: &str, usage: &str) -> Result<usize> {
         .parse::<usize>()
         .map(|value| value.max(1))
         .map_err(|_| KayaError::InvalidCommand(format!("usage: {usage}")))
+}
+
+fn parse_port_arg(args: &str, usage: &str) -> Result<u16> {
+    first_arg(args)
+        .ok_or_else(|| KayaError::InvalidCommand(format!("usage: {usage}")))?
+        .parse::<u16>()
+        .map_err(|_| KayaError::InvalidCommand(format!("usage: {usage}")))
+        .and_then(|port| {
+            if port == 0 {
+                Err(KayaError::InvalidCommand(format!("usage: {usage}")))
+            } else {
+                Ok(port)
+            }
+        })
 }
 
 fn parse_msg_command(args: &str, usage: &str) -> Result<Command> {
@@ -832,6 +912,7 @@ mod tests {
         assert!(help.contains("/send <callsign|node-id> <path>"));
         assert!(help.contains("/routes"));
         assert!(help.contains("/relay-status"));
+        assert!(help.contains("/connect <ip>:<port>"));
     }
 
     #[test]
@@ -932,6 +1013,47 @@ mod tests {
                 mode: Some("relay-only".into())
             })
         );
+    }
+
+    #[test]
+    fn parses_direct_connect_commands() {
+        let registry = CommandRegistry::default();
+
+        assert_eq!(
+            registry.parse("/listen 7777").unwrap(),
+            ParsedInput::Command(Command::Listen { port: 7777 })
+        );
+        assert_eq!(
+            registry.parse("/connect 100.81.167.95:7777").unwrap(),
+            ParsedInput::Command(Command::Connect {
+                address: "100.81.167.95:7777".into()
+            })
+        );
+        assert_eq!(
+            registry.parse("/dial 100.81.167.95:7777").unwrap(),
+            ParsedInput::Command(Command::Connect {
+                address: "100.81.167.95:7777".into()
+            })
+        );
+        assert_eq!(
+            registry.parse("/disconnect Ana").unwrap(),
+            ParsedInput::Command(Command::Disconnect { peer: "Ana".into() })
+        );
+        assert_eq!(
+            registry.parse("/connections").unwrap(),
+            ParsedInput::Command(Command::Connections)
+        );
+        assert_eq!(
+            registry.parse("/stop-listener").unwrap(),
+            ParsedInput::Command(Command::StopListener)
+        );
+        assert_eq!(
+            registry.parse("/listen-status").unwrap(),
+            ParsedInput::Command(Command::ListenStatus)
+        );
+
+        assert!(registry.parse("/listen 0").is_err());
+        assert!(registry.parse("/listen bad").is_err());
     }
 
     #[test]

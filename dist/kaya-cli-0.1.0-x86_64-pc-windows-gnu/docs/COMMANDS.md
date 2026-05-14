@@ -50,6 +50,12 @@ The parser is registry-based: command metadata defines aliases, validation, usag
 | `/relay-connect <tcp://host:port>` | `/relay-connect tcp://relay.example:7777` | Connect to a WAN relay from the running CLI. |
 | `/relay-disconnect` | `/relay-disconnect` | Disconnect from the active WAN relay. |
 | `/relay-mode [local-first|relay-only]` | `/relay-mode relay-only` | Show or change how room traffic is mirrored to the relay. |
+| `/listen <port>` | `/listen 7777` | Start a direct TCP peer listener. |
+| `/connect <ip>:<port>` | `/connect 100.81.167.95:7777` | Connect to a peer over direct TCP. |
+| `/disconnect <peer>` | `/disconnect Ana` | Close a direct TCP connection. |
+| `/connections` | `/connections` | List direct TCP peer connections. |
+| `/stop-listener` | `/stop-listener` | Stop accepting new direct TCP connections. |
+| `/listen-status` | `/listen-status` | Show listener address and direct connection count. |
 | `/mesh-status` | `/mesh-status` | Show mesh relay diagnostics. |
 | `/mesh-clear` | `/mesh-clear` | Clear mesh routes and seen-packet cache. |
 | `/history [room]` | `/history semana-info` | Show local room history. |
@@ -77,6 +83,9 @@ Aliases:
 - `/id` for `/identity`
 - `/fp` for `/fingerprint`
 - `/mesh` for `/mesh-status`
+- `/dial` for `/connect`
+- `/conns` for `/connections`
+- `/hangup` for `/disconnect`
 - `/q` or `/quit` for `/exit`
 
 ## Examples
@@ -100,6 +109,9 @@ Aliases:
 > /relay-status
 > /relay-connect tcp://relay.example:7777
 > /relay-peers
+> /listen 7777
+> /connect 100.81.167.95:7777
+> /connections
 > /mesh-status
 > /msg KY-71AF92 teste privado
 > /presence busy

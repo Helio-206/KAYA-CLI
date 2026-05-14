@@ -1,4 +1,5 @@
 mod demo;
+mod direct;
 mod events;
 mod files;
 mod input;
@@ -66,6 +67,11 @@ pub struct Runtime {
     relay_task: Option<JoinHandle<()>>,
     relay_connected: bool,
     relay_peers: HashMap<String, RelayPeerDescriptor>,
+    direct_tx: mpsc::UnboundedSender<direct::DirectRuntimeEvent>,
+    direct_rx: mpsc::UnboundedReceiver<direct::DirectRuntimeEvent>,
+    direct_listener_task: Option<JoinHandle<()>>,
+    direct_listener_addr: Option<String>,
+    direct_connections: HashMap<String, direct::DirectConnectionHandle>,
     network_shutdown_tx: Option<watch::Sender<bool>>,
 }
 
@@ -127,6 +133,7 @@ impl Runtime {
                 files.load_record(record.session);
             }
         }
+        let (direct_tx, direct_rx) = mpsc::unbounded_channel();
 
         Self {
             peers: PeerRegistry::with_timeout(
@@ -165,6 +172,11 @@ impl Runtime {
             relay_task: None,
             relay_connected: false,
             relay_peers: HashMap::new(),
+            direct_tx,
+            direct_rx,
+            direct_listener_task: None,
+            direct_listener_addr: None,
+            direct_connections: HashMap::new(),
             network_shutdown_tx: None,
         }
     }
@@ -192,6 +204,11 @@ impl Runtime {
                             self.ui_state.push_log(format!("event bus lagged by {skipped} events"));
                         }
                         Err(broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+                direct_event = self.direct_rx.recv() => {
+                    if let Some(event) = direct_event {
+                        self.handle_direct_runtime_event(event).await;
                     }
                 }
                 _ = heartbeat.tick() => {
@@ -278,6 +295,9 @@ impl Runtime {
                 }
             }
         }
+
+        self.stop_direct_listener();
+        self.close_all_direct_connections("shutdown");
 
         info!(node_id = %self.node_id, "kaya node shutdown");
         Ok(())

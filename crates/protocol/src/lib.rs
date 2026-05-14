@@ -284,7 +284,19 @@ impl Packet {
             callsign,
             Some(room.into()),
             None,
-            json!({ "capabilities": ["rooms", "dm", "presence"], "agent": "kaya-cli" }),
+            json!({
+                "capabilities": [
+                    "rooms",
+                    "dm",
+                    "presence",
+                    "encrypted_dm",
+                    "file_transfer",
+                    "mesh",
+                    "relay",
+                    "direct_tcp"
+                ],
+                "agent": "kaya-cli"
+            }),
         )
     }
 

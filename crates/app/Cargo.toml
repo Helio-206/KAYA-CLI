@@ -16,6 +16,7 @@ path = "src/main.rs"
 [dependencies]
 clap.workspace = true
 kaya-commands = { path = "../commands" }
+kaya-direct = { path = "../direct" }
 kaya-events = { path = "../events" }
 kaya-files = { path = "../files" }
 kaya-mesh = { path = "../mesh" }

@@ -60,6 +60,17 @@ pub struct UiFileTransfer {
     pub hash_ok: Option<bool>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiConnection {
+    pub peer_node_id: String,
+    pub peer_callsign: String,
+    pub transport_type: String,
+    pub remote_addr: String,
+    pub state: String,
+    pub latency_ms: Option<u64>,
+    pub encrypted_capable: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UiMeshDiagnostics {
     pub enabled: bool,
@@ -102,6 +113,8 @@ pub struct UiState {
     pub current_members: Vec<String>,
     pub peers: Vec<UiPeer>,
     pub files: Vec<UiFileTransfer>,
+    pub connections: Vec<UiConnection>,
+    pub direct_listener: Option<String>,
     pub mesh: UiMeshDiagnostics,
     pub identity_fingerprint: String,
     pub trusted_peers: usize,
@@ -143,6 +156,8 @@ impl UiState {
             current_members: Vec::new(),
             peers: Vec::new(),
             files: Vec::new(),
+            connections: Vec::new(),
+            direct_listener: None,
             mesh: UiMeshDiagnostics::default(),
             identity_fingerprint: "--".into(),
             trusted_peers: 0,

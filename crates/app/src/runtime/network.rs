@@ -247,6 +247,7 @@ impl Runtime {
             }
 
             self.mirror_packet_to_relay(&packet);
+            self.mirror_packet_to_direct(&packet);
         }
         .instrument(span)
         .await;

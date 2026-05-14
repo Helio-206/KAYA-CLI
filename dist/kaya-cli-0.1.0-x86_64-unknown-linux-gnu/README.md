@@ -7,15 +7,17 @@
 ![Offline First](https://img.shields.io/badge/offline--first-LAN--native%20%2B%20WAN--relay-222222)
 ![Terminal UI](https://img.shields.io/badge/terminal--ui-ratatui-5c7cfa)
 
-KAYA CLI is an offline-first, decentralized, terminal-based communication system for local networks, with an optional WAN relay mode for peers that are not on the same LAN. It is not just an "offline chat"; it is ephemeral social infrastructure built from physical proximity.
+KAYA CLI is an offline-first, decentralized, terminal-based communication system for local networks, with direct TCP peer links for VPN/Tailscale use and an optional WAN relay mode for peers that are not on the same LAN. It is not just an "offline chat"; it is ephemeral social infrastructure built from physical proximity.
 
-When multiple devices enter the same LAN, KAYA creates a temporary digital space where operators can discover nearby peers, join rooms, exchange public messages, send DMs, inspect presence, verify fingerprints, establish encrypted DM sessions, exchange files, relay encrypted DMs through an experimental local mesh, and keep working without internet, cloud, or a central server. When operators are far apart, they can additionally point the CLI at a TCP relay without replacing the LAN path.
+When multiple devices enter the same LAN, KAYA creates a temporary digital space where operators can discover nearby peers, join rooms, exchange public messages, send DMs, inspect presence, verify fingerprints, establish encrypted DM sessions, exchange files, relay encrypted DMs through an experimental local mesh, and keep working without internet, cloud, or a central server. When multicast is blocked, peers can connect directly over TCP, including through Tailscale addresses, without replacing the LAN path.
 
 ## Start Here
 
 - [Pitch](docs/PITCH.md)
 - [Technical Deep Dive](docs/TECHNICAL_DEEP_DIVE.md)
 - [Jury FAQ](docs/JURY_FAQ.md)
+- [Direct Connect](docs/DIRECT_CONNECT.md)
+- [Tailscale Guide](docs/TAILSCALE.md)
 - [WAN Relay Guide](docs/WAN_RELAY.md)
 - [Relay Security](docs/RELAY_SECURITY.md)
 - [Release Notes](RELEASE_NOTES.md)
@@ -54,6 +56,7 @@ kaya-cli/
 ├── crates/
 │   ├── app/          # runtime, bootstrap, coordination
 │   ├── commands/     # slash-command parser
+│   ├── direct/       # manual TCP listener, connector and frame transport
 │   ├── events/       # internal event bus and counters
 │   ├── files/        # metadata, chunking, hashing, transfer sessions
 │   ├── mesh/         # route table, relay envelopes, TTL, scoring
@@ -261,6 +264,23 @@ Then inside the CLI:
 > /secure-msg Ana dm cifrada por relay
 ```
 
+Tailscale direct connect example:
+
+Host:
+
+```text
+> /listen 7777
+> /listen-status
+```
+
+Friend:
+
+```text
+> /connect 100.81.167.95:7777
+> /connections
+> /secure-msg Helio teste seguro
+```
+
 ## Commands
 
 - `/help`
@@ -300,6 +320,12 @@ Then inside the CLI:
 - `/close-session <peer>`
 - `/routes`
 - `/route <node-id|callsign>`
+- `/listen <port>`
+- `/connect <ip>:<port>`
+- `/disconnect <peer>`
+- `/connections`
+- `/stop-listener`
+- `/listen-status`
 - `/mesh-status`
 - `/mesh-clear`
 - `/history [room]`
@@ -401,6 +427,8 @@ cargo test
 - [Architecture](docs/ARCHITECTURE.md)
 - [Event System](docs/EVENT_SYSTEM.md)
 - [Transport](docs/TRANSPORT.md)
+- [Direct Connect](docs/DIRECT_CONNECT.md)
+- [Tailscale](docs/TAILSCALE.md)
 - [State Management](docs/STATE_MANAGEMENT.md)
 - [UI System](docs/UI_SYSTEM.md)
 - [Protocol](docs/PROTOCOL.md)
@@ -455,6 +483,10 @@ cargo test
 - [LAB-21 multihop DM](labs/LAB-21-multihop-dm.md)
 - [LAB-22 mesh TTL and dedup](labs/LAB-22-mesh-ttl-and-dedup.md)
 - [LAB-23 blocked relay policy](labs/LAB-23-blocked-relay-policy.md)
+- [LAB-29 direct connect](labs/LAB-29-direct-connect.md)
+- [LAB-30 tailscale connect](labs/LAB-30-tailscale-connect.md)
+- [LAB-31 direct secure DM](labs/LAB-31-direct-secure-dm.md)
+- [LAB-32 direct file transfer](labs/LAB-32-direct-file-transfer.md)
 - [Packet loss](labs/packet-loss.md)
 - [Peer timeout](labs/peer-timeout.md)
 - [Malformed packets](labs/malformed-packets.md)

@@ -285,10 +285,11 @@ fn draw_peers(frame: &mut Frame, area: Rect, state: &UiState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
         ])
         .split(area);
 
@@ -344,7 +345,48 @@ fn draw_peers(frame: &mut Frame, area: Rect, state: &UiState) {
         chunks[1],
     );
 
-    let visible_height = chunks[2].height.saturating_sub(2) as usize;
+    let connection_limit = (chunks[2].height.saturating_sub(2) as usize / 2).max(1);
+    let mut connection_items: Vec<ListItem> = state
+        .connections
+        .iter()
+        .take(connection_limit)
+        .map(|connection| {
+            let secure = if connection.encrypted_capable {
+                "secure"
+            } else {
+                "plain"
+            };
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(connection.peer_callsign.clone(), accent_style()),
+                    Span::raw(" "),
+                    Span::styled(connection.transport_type.clone(), cyan_style()),
+                    Span::raw(" "),
+                    Span::styled(connection.state.clone(), muted_style()),
+                ]),
+                Line::from(vec![
+                    Span::styled(connection.peer_node_id.clone(), muted_style()),
+                    Span::raw("  "),
+                    Span::styled(connection.remote_addr.clone(), muted_style()),
+                    Span::raw("  "),
+                    Span::styled(secure, label_style()),
+                ]),
+            ])
+        })
+        .collect();
+    if connection_items.is_empty() {
+        let listener = state.direct_listener.as_deref().unwrap_or("not listening");
+        connection_items.push(ListItem::new(Line::from(vec![
+            Span::styled("listener ", label_style()),
+            Span::styled(listener.to_string(), muted_style()),
+        ])));
+    }
+    frame.render_widget(
+        List::new(connection_items).block(panel_block(" CONNECTIONS ")),
+        chunks[2],
+    );
+
+    let visible_height = chunks[3].height.saturating_sub(2) as usize;
     let start = state.direct_messages.len().saturating_sub(visible_height);
     let dm_items: Vec<ListItem> = state.direct_messages[start..]
         .iter()
@@ -380,9 +422,9 @@ fn draw_peers(frame: &mut Frame, area: Rect, state: &UiState) {
             ]))
         })
         .collect();
-    frame.render_widget(List::new(dm_items).block(panel_block(" DMS ")), chunks[2]);
+    frame.render_widget(List::new(dm_items).block(panel_block(" DMS ")), chunks[3]);
 
-    let file_limit = (chunks[3].height.saturating_sub(2) as usize / 2).max(1);
+    let file_limit = (chunks[4].height.saturating_sub(2) as usize / 2).max(1);
     let file_items: Vec<ListItem> = state
         .files
         .iter()
@@ -415,7 +457,7 @@ fn draw_peers(frame: &mut Frame, area: Rect, state: &UiState) {
         .collect();
     frame.render_widget(
         List::new(file_items).block(panel_block(" FILES ")),
-        chunks[3],
+        chunks[4],
     );
 }
 
@@ -501,6 +543,7 @@ fn draw_network(frame: &mut Frame, area: Rect, state: &UiState) {
             Span::styled(format_memory(state.diagnostics.memory_kb), value_style()),
         ]),
         Line::from(peer_line(state)),
+        Line::from(connection_line(state)),
         Line::from(mesh_line(state)),
         Line::from(security_line(state)),
         Line::from(input_echo_line(state)),
@@ -582,11 +625,11 @@ fn draw_splash(frame: &mut Frame, area: Rect) {
             )),
             Line::from(Span::raw("")),
             Line::from(Span::styled(
-                "No cloud. No server. Shared local space, rooms, DMs, files and mesh diagnostics.",
+                "No cloud. No server. Local rooms, secure DMs, files, mesh and direct TCP links.",
                 value_style(),
             )),
             Line::from(Span::styled(
-                "Quick start: /help  /who  /join semana-info  /msg Ana teste",
+                "Quick start: /help  /listen 7777  /connect 100.x.x.x:7777  /msg Ana teste",
                 muted_style(),
             )),
             Line::from(Span::styled(
@@ -702,6 +745,29 @@ fn peer_summary(peer: &UiPeer) -> String {
         "{}({},{status},{latency},{fp},{})",
         peer.callsign, peer.presence, peer.trust_status
     )
+}
+
+fn connection_line(state: &UiState) -> Vec<Span<'_>> {
+    let listener = state.direct_listener.as_deref().unwrap_or("--");
+    let mut spans = vec![
+        Span::styled("direct: ", label_style()),
+        Span::styled(format!("listener={listener}"), cyan_style()),
+        Span::raw("    "),
+        Span::styled("connections: ", label_style()),
+        Span::styled(state.connections.len().to_string(), value_style()),
+    ];
+
+    for connection in state.connections.iter().take(3) {
+        spans.push(Span::raw("    "));
+        spans.push(Span::styled(
+            format!(
+                "{}({},{})",
+                connection.peer_callsign, connection.transport_type, connection.state
+            ),
+            accent_style(),
+        ));
+    }
+    spans
 }
 
 fn peer_style(peer: &UiPeer) -> ratatui::style::Style {
@@ -844,6 +910,8 @@ fn command_hint(state: &UiState) -> String {
         "/msg Ana teste",
         "/secure-msg Ana segredo",
         "/send Ana ./docs/PROTOCOL.md",
+        "/listen 7777",
+        "/connect 100.x.x.x:7777",
         "/demo-peers 3",
     ];
     let input = state.input.trim();
