@@ -50,6 +50,16 @@ Default capacity:
 - `FileTransferFailed`
 - `FileHashVerified`
 - `FileHashMismatch`
+- `RouteDiscovered`
+- `RouteExpired`
+- `RouteRequestSent`
+- `RouteResponseReceived`
+- `MeshPacketRelayed`
+- `MeshPacketDropped`
+- `MeshPacketDelivered`
+- `RelayDenied`
+- `RouteError`
+- `MeshDiagnosticsUpdated`
 - `SecurityWarning`
 - `ErrorOccurred`
 - `NetworkStarted`
@@ -63,6 +73,7 @@ UDP socket
   -> PacketReceived event
   -> runtime handler
   -> security inspection
+  -> mesh route/relay handling
   -> peer/room/session state update
   -> domain events
   -> UI state and diagnostics

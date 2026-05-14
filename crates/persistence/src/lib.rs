@@ -21,6 +21,8 @@ pub struct KayaConfig {
     pub log_level: String,
     #[serde(default)]
     pub file_transfer: FileTransferSettings,
+    #[serde(default)]
+    pub mesh: MeshSettings,
 }
 
 impl Default for KayaConfig {
@@ -37,6 +39,7 @@ impl Default for KayaConfig {
             last_room: None,
             log_level: "kaya=info".into(),
             file_transfer: FileTransferSettings::default(),
+            mesh: MeshSettings::default(),
         }
     }
 }
@@ -58,6 +61,31 @@ impl Default for FileTransferSettings {
             chunk_size_kb: 64,
             accept_from_unknown: true,
             download_dir: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeshSettings {
+    pub enabled: bool,
+    pub max_ttl: u8,
+    pub allow_relay_for_unknown: bool,
+    pub allow_relay_for_blocked: bool,
+    pub relay_encrypted_only: bool,
+    pub route_expiry_seconds: u64,
+    pub max_seen_packets: usize,
+}
+
+impl Default for MeshSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_ttl: 5,
+            allow_relay_for_unknown: true,
+            allow_relay_for_blocked: false,
+            relay_encrypted_only: false,
+            route_expiry_seconds: 120,
+            max_seen_packets: 5000,
         }
     }
 }
@@ -111,6 +139,21 @@ impl KayaConfig {
         if self.file_transfer.enabled && self.file_transfer.chunk_size_kb == 0 {
             return Err(KayaError::Config(
                 "file_transfer.chunk_size_kb must be greater than 0".into(),
+            ));
+        }
+        if self.mesh.enabled && self.mesh.max_ttl == 0 {
+            return Err(KayaError::Config(
+                "mesh.max_ttl must be greater than 0".into(),
+            ));
+        }
+        if self.mesh.enabled && self.mesh.route_expiry_seconds == 0 {
+            return Err(KayaError::Config(
+                "mesh.route_expiry_seconds must be greater than 0".into(),
+            ));
+        }
+        if self.mesh.enabled && self.mesh.max_seen_packets == 0 {
+            return Err(KayaError::Config(
+                "mesh.max_seen_packets must be greater than 0".into(),
             ));
         }
         Ok(())
@@ -317,6 +360,7 @@ mod tests {
             last_room: Some("semana-info".into()),
             log_level: "kaya=debug".into(),
             file_transfer: FileTransferSettings::default(),
+            mesh: MeshSettings::default(),
         };
 
         config_store.save(&config).unwrap();

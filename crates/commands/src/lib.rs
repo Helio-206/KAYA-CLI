@@ -35,6 +35,10 @@ pub enum Command {
     TrustList,
     Sessions,
     CloseSession { peer: String },
+    Routes,
+    Route { node_id: String },
+    MeshStatus,
+    MeshClear,
     History { room: Option<String> },
     DmHistory { peer: String },
     Status,
@@ -71,6 +75,10 @@ pub enum CommandKind {
     TrustList,
     Sessions,
     CloseSession,
+    Routes,
+    Route,
+    MeshStatus,
+    MeshClear,
     History,
     DmHistory,
     Status,
@@ -272,6 +280,34 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         description: "close a secure DM session",
     },
     CommandSpec {
+        kind: CommandKind::Routes,
+        name: "routes",
+        aliases: &[],
+        usage: "/routes",
+        description: "list mesh routes",
+    },
+    CommandSpec {
+        kind: CommandKind::Route,
+        name: "route",
+        aliases: &[],
+        usage: "/route <node-id|callsign>",
+        description: "show best mesh route to a target",
+    },
+    CommandSpec {
+        kind: CommandKind::MeshStatus,
+        name: "mesh-status",
+        aliases: &["mesh"],
+        usage: "/mesh-status",
+        description: "show mesh routing diagnostics",
+    },
+    CommandSpec {
+        kind: CommandKind::MeshClear,
+        name: "mesh-clear",
+        aliases: &[],
+        usage: "/mesh-clear",
+        description: "clear mesh routing table and dedup cache",
+    },
+    CommandSpec {
         kind: CommandKind::History,
         name: "history",
         aliases: &[],
@@ -442,6 +478,12 @@ impl CommandRegistry {
             CommandKind::CloseSession => Ok(Command::CloseSession {
                 peer: parse_peer_arg(args, spec.usage)?.to_string(),
             }),
+            CommandKind::Routes => Ok(Command::Routes),
+            CommandKind::Route => Ok(Command::Route {
+                node_id: parse_peer_arg(args, spec.usage)?.to_string(),
+            }),
+            CommandKind::MeshStatus => Ok(Command::MeshStatus),
+            CommandKind::MeshClear => Ok(Command::MeshClear),
             CommandKind::History => Ok(Command::History {
                 room: first_arg(args).map(validate_room_name).transpose()?,
             }),
@@ -618,6 +660,7 @@ mod tests {
         assert!(help.contains("/presence <online|away|busy|invisible>"));
         assert!(help.contains("/secure-msg <callsign|node-id> <message>"));
         assert!(help.contains("/send <callsign|node-id> <path>"));
+        assert!(help.contains("/routes"));
     }
 
     #[test]
@@ -667,6 +710,30 @@ mod tests {
         assert_eq!(
             registry.parse("/files").unwrap(),
             ParsedInput::Command(Command::Files)
+        );
+    }
+
+    #[test]
+    fn parses_phase_five_mesh_commands() {
+        let registry = CommandRegistry::default();
+
+        assert_eq!(
+            registry.parse("/routes").unwrap(),
+            ParsedInput::Command(Command::Routes)
+        );
+        assert_eq!(
+            registry.parse("/route KY-A91C0D").unwrap(),
+            ParsedInput::Command(Command::Route {
+                node_id: "KY-A91C0D".into()
+            })
+        );
+        assert_eq!(
+            registry.parse("/mesh").unwrap(),
+            ParsedInput::Command(Command::MeshStatus)
+        );
+        assert_eq!(
+            registry.parse("/mesh-clear").unwrap(),
+            ParsedInput::Command(Command::MeshClear)
         );
     }
 }

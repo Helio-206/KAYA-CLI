@@ -58,6 +58,13 @@ Signed packets are verified over a canonical JSON representation of the packet w
 | `FILE_TRANSFER_COMPLETE` | `target_node`, `payload.file_id` | Announces transfer completion. |
 | `FILE_TRANSFER_CANCEL` | `target_node`, `payload.file_id` | Cancels a transfer. |
 | `FILE_TRANSFER_ERROR` | `target_node`, `payload.file_id`, `payload.reason` | Reports a transfer failure. |
+| `ROUTE_ANNOUNCE` | `payload.routes` | Announces lightweight known routes. |
+| `ROUTE_REQUEST` | `payload.request_id`, `payload.destination_node`, `payload.ttl` | Searches for a path to a node. |
+| `ROUTE_RESPONSE` | `target_node`, route response payload | Returns a possible route. |
+| `MESH_RELAY` | `target_node`, mesh envelope payload | Relays an inner packet toward a destination. |
+| `ROUTE_ERROR` | `target_node`, `payload.destination_node`, `payload.reason` | Reports route failure. |
+| `ROUTE_PING` | `target_node` | Reserved for mesh latency checks. |
+| `ROUTE_PONG` | `target_node`, `payload.reply_to` | Reply to route ping. |
 | `PRESENCE_UPDATE` | `room`, `payload.presence` | Announces `online`, `away`, `busy`, or `invisible`. |
 | `PING` | `target_node` | Reserved for latency measurement. |
 | `PONG` | `target_node` | Reply to ping/hello. |
@@ -135,6 +142,53 @@ Session setup uses X25519 public keys exchanged in `DM_SESSION_REQUEST` and `DM_
 
 `FILE_CHUNK` stores the chunk payload as hex. `FILE_CHUNK_ENCRYPTED` stores `session_id`, `nonce`, `ciphertext`, `sender_fingerprint`, and the plaintext chunk hash so the receiver can verify the decrypted chunk.
 
+## Mesh Payloads
+
+`ROUTE_ANNOUNCE`:
+
+```json
+{
+  "routes": [
+    {
+      "destination_node": "KY-A91C0D",
+      "destination_callsign": "Bruno",
+      "hop_count": 2,
+      "score": 9180,
+      "trusted": true,
+      "encrypted_capable": true
+    }
+  ]
+}
+```
+
+`ROUTE_REQUEST`:
+
+```json
+{
+  "request_id": "a19bd1d3-beba-4e61-9e5e-0eb8d4f78206",
+  "destination_node": "KY-A91C0D",
+  "ttl": 5
+}
+```
+
+`ROUTE_RESPONSE`:
+
+```json
+{
+  "request_id": "a19bd1d3-beba-4e61-9e5e-0eb8d4f78206",
+  "destination_node": "KY-A91C0D",
+  "destination_callsign": "Bruno",
+  "next_hop": "KY-AAAAAA",
+  "hop_count": 2,
+  "score": 9180,
+  "route_trace": ["KY-AAAAAA", "KY-A91C0D"],
+  "trusted": true,
+  "encrypted_capable": true
+}
+```
+
+`MESH_RELAY` uses the envelope described in [MESH.md](MESH.md). Relay nodes route the envelope and do not process the inner packet unless they are the destination.
+
 ## Validation
 
 The protocol crate rejects:
@@ -154,6 +208,7 @@ The protocol crate rejects:
 - message packets without `payload.body`.
 - malformed signature envelopes;
 - malformed encrypted DM/session payloads.
+- malformed route discovery and mesh relay payloads.
 
 ## Room Names
 
@@ -184,4 +239,4 @@ Valid presence values:
 Clients may emit `online`, `away`, `busy`, and `invisible`. `offline` is derived from graceful leave or peer timeout.
 ## Versioning
 
-Phase 1 through Phase 3 use `protocol_version = 1`. New packet types and optional envelope fields are additive; clients should ignore packet types they do not understand only at the transport/runtime boundary, never by silently treating them as known commands.
+Phase 1 through Phase 5 use `protocol_version = 1`. New packet types and optional envelope fields are additive; clients should ignore packet types they do not understand only at the transport/runtime boundary, never by silently treating them as known commands.

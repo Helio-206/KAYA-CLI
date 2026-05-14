@@ -2,7 +2,7 @@
 
 KAYA CLI is an offline-first, decentralized, terminal-based communication system for local networks. It is not just an "offline chat"; it is ephemeral social infrastructure built from physical proximity.
 
-When multiple devices enter the same LAN, KAYA creates a temporary digital space where operators can discover nearby peers, join rooms, exchange public messages, send DMs, inspect presence, verify fingerprints, establish encrypted DM sessions, exchange files, and keep working without internet, cloud, or a central server.
+When multiple devices enter the same LAN, KAYA creates a temporary digital space where operators can discover nearby peers, join rooms, exchange public messages, send DMs, inspect presence, verify fingerprints, establish encrypted DM sessions, exchange files, relay encrypted DMs through an experimental local mesh, and keep working without internet, cloud, or a central server.
 
 ```text
 +-------------------- KAYA --------------------+
@@ -39,6 +39,7 @@ kaya-cli/
 │   ├── commands/     # slash-command parser
 │   ├── events/       # internal event bus and counters
 │   ├── files/        # metadata, chunking, hashing, transfer sessions
+│   ├── mesh/         # route table, relay envelopes, TTL, scoring
 │   ├── peer/         # presence, peer cache, timeouts
 │   ├── persistence/  # sled-backed local config/history/cache
 │   ├── protocol/     # packet schema, validation, JSON encode/decode
@@ -98,6 +99,15 @@ max_file_size_mb = 50
 chunk_size_kb = 64
 accept_from_unknown = true
 download_dir = "~/.kaya/files/completed"
+
+[mesh]
+enabled = true
+max_ttl = 5
+allow_relay_for_unknown = true
+allow_relay_for_blocked = false
+relay_encrypted_only = false
+route_expiry_seconds = 120
+max_seen_packets = 5000
 ```
 
 Identity is stored separately in `~/.kaya/identity.toml`. It contains the persistent node id plus Ed25519 and X25519 key material. Do not share this file.
@@ -129,6 +139,7 @@ KAYA callsign: Bruno
 > /msg Helio teste privado
 > /secure-msg Helio teste privado cifrado
 > /send Helio ./docs/PROTOCOL.md
+> /routes
 ```
 
 ## Commands
@@ -160,6 +171,10 @@ KAYA callsign: Bruno
 - `/trust-list`
 - `/sessions`
 - `/close-session <peer>`
+- `/routes`
+- `/route <node-id|callsign>`
+- `/mesh-status`
+- `/mesh-clear`
 - `/history [room]`
 - `/dm-history <peer>`
 - `/status`
@@ -184,6 +199,7 @@ cargo test
 - [UI System](docs/UI_SYSTEM.md)
 - [Protocol](docs/PROTOCOL.md)
 - [File Transfer](docs/FILE_TRANSFER.md)
+- [Mesh](docs/MESH.md)
 - [Commands](docs/COMMANDS.md)
 - [Testing](docs/TESTING.md)
 - [Roadmap](docs/ROADMAP.md)
@@ -208,6 +224,11 @@ cargo test
 - [LAB-16 encrypted file transfer](labs/LAB-16-encrypted-file-transfer.md)
 - [LAB-17 corrupted chunk](labs/LAB-17-corrupted-chunk.md)
 - [LAB-18 blocked peer file transfer](labs/LAB-18-blocked-peer-file-transfer.md)
+- [LAB-19 route table](labs/LAB-19-route-table.md)
+- [LAB-20 mesh relay](labs/LAB-20-mesh-relay.md)
+- [LAB-21 multihop DM](labs/LAB-21-multihop-dm.md)
+- [LAB-22 mesh TTL and dedup](labs/LAB-22-mesh-ttl-and-dedup.md)
+- [LAB-23 blocked relay policy](labs/LAB-23-blocked-relay-policy.md)
 - [Packet loss](labs/packet-loss.md)
 - [Peer timeout](labs/peer-timeout.md)
 - [Malformed packets](labs/malformed-packets.md)

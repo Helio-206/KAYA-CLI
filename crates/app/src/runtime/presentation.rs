@@ -4,7 +4,7 @@ use kaya_persistence::{HistoryRecord, KnownPeer};
 use kaya_protocol::Packet;
 use kaya_rooms::ChatMessage;
 use kaya_shared::now_millis;
-use kaya_ui::{UiFileTransfer, UiMessage, UiPeer, UiRoom};
+use kaya_ui::{UiFileTransfer, UiMeshDiagnostics, UiMessage, UiPeer, UiRoom};
 use tracing::error;
 
 impl Runtime {
@@ -123,6 +123,7 @@ impl Runtime {
         self.ui_state.presence = self.presence;
         self.sync_security_to_ui();
         self.sync_files_to_ui();
+        self.sync_mesh_to_ui();
     }
 
     pub(super) fn sync_security_to_ui(&mut self) {
@@ -156,6 +157,20 @@ impl Runtime {
                 }
             })
             .collect();
+    }
+
+    pub(super) fn sync_mesh_to_ui(&mut self) {
+        let diagnostics = self.mesh.diagnostics_snapshot();
+        self.ui_state.mesh = UiMeshDiagnostics {
+            enabled: diagnostics.enabled,
+            routes: diagnostics.routes,
+            relayed_packets: diagnostics.relayed_packets,
+            delivered_packets: diagnostics.delivered_packets,
+            dropped_packets: diagnostics.dropped_packets,
+            avg_hop_count: diagnostics.avg_hop_count(),
+            last_route_discovered: diagnostics.last_route_discovered,
+            current_route_trace: diagnostics.current_route_trace,
+        };
     }
 
     pub(super) fn publish(&self, event: KayaEvent) {

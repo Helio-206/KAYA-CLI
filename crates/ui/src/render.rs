@@ -346,6 +346,7 @@ fn draw_network(frame: &mut Frame, area: Rect, state: &UiState) {
             Span::styled(format_memory(state.diagnostics.memory_kb), value_style()),
         ]),
         Line::from(peer_line(state)),
+        Line::from(mesh_line(state)),
         Line::from(security_line(state)),
     ];
 
@@ -354,7 +355,7 @@ fn draw_network(frame: &mut Frame, area: Rect, state: &UiState) {
     }
 
     if state.show_logs {
-        let log_height = area.height.saturating_sub(6) as usize;
+        let log_height = area.height.saturating_sub(7) as usize;
         let start = state.logs.len().saturating_sub(log_height);
         for log in &state.logs[start..] {
             lines.push(Line::from(vec![
@@ -455,6 +456,42 @@ fn event_counter_line(state: &UiState) -> Vec<Span<'_>> {
         spans.push(Span::styled(format!("{kind}={count}"), muted_style()));
     }
     spans
+}
+
+fn mesh_line(state: &UiState) -> Vec<Span<'_>> {
+    let enabled = if state.mesh.enabled { "yes" } else { "no" };
+    let trace = if state.mesh.current_route_trace.is_empty() {
+        state
+            .mesh
+            .last_route_discovered
+            .as_deref()
+            .unwrap_or("--")
+            .to_string()
+    } else {
+        state.mesh.current_route_trace.join(" -> ")
+    };
+    vec![
+        Span::styled("mesh: ", label_style()),
+        Span::styled(enabled, value_style()),
+        Span::raw("    "),
+        Span::styled("routes: ", label_style()),
+        Span::styled(state.mesh.routes.to_string(), value_style()),
+        Span::raw("    "),
+        Span::styled("relayed/dropped: ", label_style()),
+        Span::styled(
+            format!(
+                "{} / {}",
+                state.mesh.relayed_packets, state.mesh.dropped_packets
+            ),
+            value_style(),
+        ),
+        Span::raw("    "),
+        Span::styled("avg hops: ", label_style()),
+        Span::styled(state.mesh.avg_hop_count.to_string(), value_style()),
+        Span::raw("    "),
+        Span::styled("trace: ", label_style()),
+        Span::styled(trace, muted_style()),
+    ]
 }
 
 fn average_latency(peers: &[UiPeer]) -> Option<u64> {

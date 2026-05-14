@@ -251,6 +251,13 @@ impl RoomStore {
             | PacketType::FileTransferComplete
             | PacketType::FileTransferCancel
             | PacketType::FileTransferError
+            | PacketType::RouteAnnounce
+            | PacketType::RouteRequest
+            | PacketType::RouteResponse
+            | PacketType::MeshRelay
+            | PacketType::RouteError
+            | PacketType::RoutePing
+            | PacketType::RoutePong
             | PacketType::PresenceUpdate
             | PacketType::Ping
             | PacketType::Pong

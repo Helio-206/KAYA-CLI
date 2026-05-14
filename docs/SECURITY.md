@@ -22,7 +22,7 @@ KAYA includes packet ids, timestamps, and runtime duplicate suppression for rece
 
 ### Relay Attacks
 
-A malicious node could rebroadcast packets outside the intended local context.
+Mesh relay is experimental. A malicious node could rebroadcast packets outside the intended local context, advertise poor routes, or drop relayed traffic.
 
 ## Mitigations Planned
 
@@ -43,7 +43,12 @@ A malicious node could rebroadcast packets outside the intended local context.
 - Secure file chunks can use the existing secure session with HKDF context `kaya-file-transfer-v1`.
 - File offers are manual accept/reject. Blocked peers cannot route file offers or chunks into the transfer manager.
 - The UI exposes identity fingerprint, trusted/blocked counts, active secure sessions, and security warning count.
+- Phase 5 relays encrypted DMs as opaque payloads. Relay nodes see the mesh envelope and packet type, but cannot decrypt `DIRECT_MESSAGE_ENCRYPTED`.
+- Mesh policy never relays blocked peers by default and applies TTL, route trace loop checks, and duplicate mesh packet suppression.
+- File chunks over mesh are disabled in Phase 5 to avoid accidental bulk relay abuse.
 
 ## Operational Guidance
 
 Use public rooms for non-sensitive coordination. Use `/secure-msg` for sensitive local direct messages, and verify peer fingerprints out of band before trusting a peer.
+
+Use `/routes` and `/mesh-status` to inspect relay behavior. Trust route quality cautiously: Phase 5 does not authenticate route truth beyond signed packet envelopes and local trust policy.

@@ -46,13 +46,15 @@
 - Transfer progress and metadata persistence.
 - Remaining future work: retransmission windows, resumable transfers, and mesh routing.
 
-## Phase 5: Mesh Extensions
+## Phase 5: Mesh Relay and Multi-Hop Routing
 
-- Multi-interface discovery.
-- Optional relay mode.
-- Store-and-forward for intermittent peers.
-- File capsules for small offline artifacts.
-- Protocol compatibility matrix.
+- Experimental mesh envelope over protocol v1.
+- Route announcements, route requests, route responses, and route errors.
+- Scored routing table with expiry.
+- TTL, hop count, route trace, duplicate suppression, and no-loop policy.
+- Multi-hop DMs and encrypted DMs.
+- Mesh support for file control packets.
+- Remaining future work: file chunks over mesh, store-and-forward, network namespace simulator, and protocol compatibility matrix.
 
 ## Phase 6: Field Tooling
 

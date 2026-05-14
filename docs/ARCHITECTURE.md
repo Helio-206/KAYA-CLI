@@ -15,9 +15,10 @@ KAYA is a modular Rust workspace designed around strict separation of responsibi
 9. `peer` updates presence and timeout state.
 10. `rooms` routes room messages and plaintext DMs.
 11. Secure DM packets are routed through `security` session state.
-12. File packets are routed through `files` transfer state.
-13. Domain events update the UI projection.
-14. `persistence` records config, known peers, and basic history.
+12. Mesh route packets are handled by `mesh` before domain routing.
+13. File packets are routed through `files` transfer state.
+14. Domain events update the UI projection.
+15. `persistence` records config, known peers, and basic history.
 
 ## Crates
 
@@ -52,6 +53,10 @@ Owns persistent local cryptographic identity, Ed25519 packet signing, peer finge
 ### files
 
 Owns file metadata, safe filename validation, SHA-256 hashing, chunking, transfer sessions, progress, reassembly, metadata persistence, and completed-file storage.
+
+### mesh
+
+Owns route table state, mesh envelope rules, TTL handling, duplicate mesh packet suppression, relay policy, route scoring, and diagnostics. The runtime uses it to route DMs and file control packets when direct delivery is unavailable.
 
 ### commands
 
@@ -88,6 +93,8 @@ transport -> PacketReceived -> runtime -> peer/rooms -> domain events -> UI proj
 - `DM_SESSION_REQUEST` / `DM_SESSION_ACCEPT`: establishes encrypted DM session state.
 - `DIRECT_MESSAGE_ENCRYPTED`: routes encrypted private text after local decryption.
 - `FILE_OFFER` through `FILE_TRANSFER_COMPLETE`: routes offline file transfer state.
+- `ROUTE_ANNOUNCE` / `ROUTE_REQUEST` / `ROUTE_RESPONSE`: maintain lightweight mesh route state.
+- `MESH_RELAY`: carries an inner packet across a known route.
 - `LEAVE`: marks a peer offline.
 - `PRESENCE_UPDATE`: updates peer presence.
 - `PING`/`PONG`: reserved for latency measurement.
@@ -125,3 +132,15 @@ Phase 4 adds file payloads without changing transport topology:
 - completed files are written under the local KAYA files directory;
 - encrypted chunks reuse an already active secure session;
 - no mesh routing, relay, or file broadcast is introduced.
+
+## Phase 5 Mesh Layer
+
+Phase 5 keeps UDP multicast as the local transport and adds an experimental relay layer:
+
+- direct peers remain preferred;
+- route announcements populate a scored routing table;
+- `/msg` and `/secure-msg` can use `MESH_RELAY` when a route exists;
+- X25519/ChaCha20-Poly1305 DMs stay end-to-end encrypted through relays;
+- file offers and accept/reject/cancel/error packets can cross mesh;
+- file chunks over mesh are explicitly rejected for this phase;
+- TTL, route trace, duplicate suppression, and block policy prevent basic loops and abuse.

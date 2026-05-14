@@ -4,6 +4,7 @@ members = [
     "crates/commands",
     "crates/events",
     "crates/files",
+    "crates/mesh",
     "crates/peer",
     "crates/persistence",
     "crates/protocol",

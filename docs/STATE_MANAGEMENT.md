@@ -93,6 +93,20 @@ Tracks:
 - final hash verification status;
 - persisted transfer records under `~/.kaya/files/metadata`.
 
+## Mesh State
+
+`crates/mesh`
+
+Tracks:
+
+- route table entries keyed by destination node id;
+- next hop, hop count, score, trust and encrypted capability;
+- route expiry timestamps;
+- seen mesh packet ids for duplicate suppression;
+- relay counters, drop counters, average hop diagnostics, and current route trace.
+
+Mesh state is in-memory and intentionally lightweight. Routes are rediscovered from direct peer observation, `ROUTE_ANNOUNCE`, and `ROUTE_RESPONSE`.
+
 ## Event-Driven Updates
 
 State mutation happens inside the runtime after validated events:
@@ -101,6 +115,7 @@ State mutation happens inside the runtime after validated events:
 PacketReceived
   -> dedup
   -> signature/trust inspection
+  -> mesh route/relay handling
   -> peer registry
   -> room or secure-session routing
   -> file-transfer routing

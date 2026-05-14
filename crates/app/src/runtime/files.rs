@@ -19,7 +19,19 @@ impl Runtime {
         let target = match self.peers.resolve_target_checked(&target) {
             TargetResolution::Found(peer) => peer,
             TargetResolution::NotFound(target) => {
-                self.system_message(format!("file target not found: {target}"));
+                let Some(peer) = self.resolve_mesh_target(&target) else {
+                    if kaya_shared::is_valid_node_id(&target) {
+                        self.send_route_request(&target).await;
+                        self.system_message(format!(
+                            "file target not found locally: {target}; route request sent"
+                        ));
+                    } else {
+                        self.system_message(format!("file target not found: {target}"));
+                    }
+                    return;
+                };
+                self.send_file_offer_to(peer.node_id, peer.callsign, path)
+                    .await;
                 return;
             }
             TargetResolution::DuplicateCallsign { callsign, matches } => {
@@ -35,7 +47,21 @@ impl Runtime {
             return;
         }
 
-        let security = if self.sessions.has_active(&target.node_id) {
+        self.send_file_offer_to(target.node_id, target.callsign, path)
+            .await;
+    }
+
+    async fn send_file_offer_to(
+        &mut self,
+        target_node: String,
+        target_callsign: String,
+        path: String,
+    ) {
+        if self.trust_store.is_blocked(&target_node) {
+            self.system_message(format!("file target is blocked: {target_node}"));
+            return;
+        }
+        let security = if self.sessions.has_active(&target_node) {
             TransferSecurity::Encrypted
         } else {
             TransferSecurity::Unencrypted
@@ -45,8 +71,8 @@ impl Runtime {
                 path: path.into(),
                 sender_node_id: self.node_id.clone(),
                 sender_callsign: self.callsign.clone(),
-                peer_node_id: target.node_id.clone(),
-                peer_callsign: target.callsign.clone(),
+                peer_node_id: target_node.clone(),
+                peer_callsign: target_callsign.clone(),
                 security,
             },
             &self.file_config,
@@ -61,17 +87,20 @@ impl Runtime {
         self.publish(KayaEvent::FileOfferSent {
             file_id: session.file_id.clone(),
             file_name: session.metadata.file_name.clone(),
-            target_node: target.node_id.clone(),
-            target_callsign: target.callsign.clone(),
+            target_node: target_node.clone(),
+            target_callsign: target_callsign.clone(),
             size_bytes: session.metadata.file_size,
             encrypted: security == TransferSecurity::Encrypted,
         });
-        self.send_packet(Packet::file_offer(
-            self.node_id.clone(),
-            self.callsign.clone(),
-            target.node_id,
-            file_offer_payload(&session.metadata, security == TransferSecurity::Encrypted),
-        ))
+        self.send_packet_routed(
+            Packet::file_offer(
+                self.node_id.clone(),
+                self.callsign.clone(),
+                target_node.clone(),
+                file_offer_payload(&session.metadata, security == TransferSecurity::Encrypted),
+            ),
+            &target_node,
+        )
         .await;
         self.sync_files_to_ui();
     }
@@ -98,12 +127,15 @@ impl Runtime {
             node_id: self.node_id.clone(),
             callsign: self.callsign.clone(),
         });
-        self.send_packet(Packet::file_accept(
-            self.node_id.clone(),
-            self.callsign.clone(),
-            session.peer_node_id,
-            file_id.to_string(),
-        ))
+        self.send_packet_routed(
+            Packet::file_accept(
+                self.node_id.clone(),
+                self.callsign.clone(),
+                session.peer_node_id.clone(),
+                file_id.to_string(),
+            ),
+            &session.peer_node_id,
+        )
         .await;
         self.sync_files_to_ui();
     }
@@ -124,13 +156,16 @@ impl Runtime {
             callsign: self.callsign.clone(),
             reason: Some("operator rejected".into()),
         });
-        self.send_packet(Packet::file_reject(
-            self.node_id.clone(),
-            self.callsign.clone(),
-            session.peer_node_id,
-            file_id.to_string(),
-            "operator rejected",
-        ))
+        self.send_packet_routed(
+            Packet::file_reject(
+                self.node_id.clone(),
+                self.callsign.clone(),
+                session.peer_node_id.clone(),
+                file_id.to_string(),
+                "operator rejected",
+            ),
+            &session.peer_node_id,
+        )
         .await;
         self.sync_files_to_ui();
     }
@@ -149,13 +184,16 @@ impl Runtime {
             file_id: file_id.to_string(),
             reason: Some("operator cancelled".into()),
         });
-        self.send_packet(Packet::file_transfer_cancel(
-            self.node_id.clone(),
-            self.callsign.clone(),
-            session.peer_node_id,
-            file_id.to_string(),
-            "operator cancelled",
-        ))
+        self.send_packet_routed(
+            Packet::file_transfer_cancel(
+                self.node_id.clone(),
+                self.callsign.clone(),
+                session.peer_node_id.clone(),
+                file_id.to_string(),
+                "operator cancelled",
+            ),
+            &session.peer_node_id,
+        )
         .await;
         self.sync_files_to_ui();
     }
@@ -232,15 +270,18 @@ impl Runtime {
             return;
         }
         if !self.file_config.enabled {
-            self.send_packet(Packet::file_reject(
-                self.node_id.clone(),
-                self.callsign.clone(),
-                packet.node_id.clone(),
-                payload_str(packet, "file_id")
-                    .unwrap_or("unknown")
-                    .to_string(),
-                "file transfer disabled",
-            ))
+            self.send_packet_routed(
+                Packet::file_reject(
+                    self.node_id.clone(),
+                    self.callsign.clone(),
+                    packet.node_id.clone(),
+                    payload_str(packet, "file_id")
+                        .unwrap_or("unknown")
+                        .to_string(),
+                    "file transfer disabled",
+                ),
+                &packet.node_id,
+            )
             .await;
             return;
         }
@@ -255,13 +296,16 @@ impl Runtime {
         let signed = packet.public_key.is_some() && packet.signature.is_some();
         let trusted = self.trust_store.status(&packet.node_id) == TrustStatus::Trusted;
         if !trusted && !self.file_config.accept_from_unknown {
-            self.send_packet(Packet::file_reject(
-                self.node_id.clone(),
-                self.callsign.clone(),
-                packet.node_id.clone(),
-                payload.file_id,
-                "unknown peer not allowed",
-            ))
+            self.send_packet_routed(
+                Packet::file_reject(
+                    self.node_id.clone(),
+                    self.callsign.clone(),
+                    packet.node_id.clone(),
+                    payload.file_id,
+                    "unknown peer not allowed",
+                ),
+                &packet.node_id,
+            )
             .await;
             return;
         }
@@ -489,6 +533,32 @@ impl Runtime {
     }
 
     async fn send_file_chunks(&mut self, file_id: &str, peer_node_id: &str) {
+        if self
+            .peers
+            .get(peer_node_id)
+            .map(|peer| !peer.online)
+            .unwrap_or(true)
+        {
+            let reason = "file chunks over mesh not enabled yet".to_string();
+            let _ = self.files.fail(file_id, reason.clone());
+            self.persist_file_session(file_id);
+            self.publish(KayaEvent::FileTransferFailed {
+                file_id: file_id.to_string(),
+                reason: reason.clone(),
+            });
+            self.send_packet_routed(
+                Packet::file_transfer_error(
+                    self.node_id.clone(),
+                    self.callsign.clone(),
+                    peer_node_id.to_string(),
+                    file_id.to_string(),
+                    reason,
+                ),
+                peer_node_id,
+            )
+            .await;
+            return;
+        }
         let session = match self.files.session(file_id) {
             Ok(session) => session.clone(),
             Err(err) => {

@@ -277,6 +277,13 @@ pub fn packet_requires_signature_validation(packet_type: PacketType) -> bool {
             | PacketType::FileTransferComplete
             | PacketType::FileTransferCancel
             | PacketType::FileTransferError
+            | PacketType::RouteAnnounce
+            | PacketType::RouteRequest
+            | PacketType::RouteResponse
+            | PacketType::MeshRelay
+            | PacketType::RouteError
+            | PacketType::RoutePing
+            | PacketType::RoutePong
     )
 }
 

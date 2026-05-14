@@ -5,6 +5,7 @@ mod runtime;
 
 use kaya_events::EventBus;
 use kaya_files::{FileStore, FileTransferConfig};
+use kaya_mesh::MeshPolicy;
 use kaya_persistence::{default_data_dir, ConfigStore, Store};
 use kaya_security::{IdentityStore, TrustStore};
 use kaya_shared::{KayaError, Result};
@@ -29,6 +30,7 @@ pub async fn run() -> Result<()> {
     let identity = identity_store.load_or_create(&callsign)?;
     let trust_store = TrustStore::load_or_create(&data_dir)?;
     let file_config = file_transfer_config(&config);
+    let mesh_policy = mesh_policy(&config);
     let file_store = FileStore::new(&data_dir, file_config.download_dir.clone())?;
 
     let transport = MulticastTransport::bind(transport_config(&config)?)
@@ -47,6 +49,7 @@ pub async fn run() -> Result<()> {
         identity_created,
         file_store,
         file_config,
+        mesh_policy,
     });
     runtime.run().await
 }
@@ -58,6 +61,18 @@ fn file_transfer_config(config: &kaya_persistence::KayaConfig) -> FileTransferCo
         chunk_size: (config.file_transfer.chunk_size_kb * 1024) as usize,
         accept_from_unknown: config.file_transfer.accept_from_unknown,
         download_dir: config.file_transfer.download_dir.clone(),
+    }
+}
+
+fn mesh_policy(config: &kaya_persistence::KayaConfig) -> MeshPolicy {
+    MeshPolicy {
+        enabled: config.mesh.enabled,
+        max_ttl: config.mesh.max_ttl,
+        allow_relay_for_unknown: config.mesh.allow_relay_for_unknown,
+        allow_relay_for_blocked: config.mesh.allow_relay_for_blocked,
+        relay_encrypted_only: config.mesh.relay_encrypted_only,
+        route_expiry_seconds: config.mesh.route_expiry_seconds,
+        max_seen_packets: config.mesh.max_seen_packets,
     }
 }
 

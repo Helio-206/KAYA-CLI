@@ -86,6 +86,7 @@ impl Runtime {
             self.rooms.current_room().to_string(),
         ))
         .await;
+        self.send_packet(self.route_announce_packet()).await;
     }
 
     pub(super) async fn send_packet(&mut self, mut packet: Packet) {
@@ -195,6 +196,7 @@ impl Runtime {
                 self.callsign.clone(),
                 self.rooms.current_room().to_string(),
             ),
+            self.route_announce_packet(),
         ];
 
         for room in self.rooms.summaries() {

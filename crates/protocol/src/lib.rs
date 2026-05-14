@@ -71,6 +71,13 @@ pub enum PacketType {
     FileTransferComplete,
     FileTransferCancel,
     FileTransferError,
+    RouteAnnounce,
+    RouteRequest,
+    RouteResponse,
+    MeshRelay,
+    RouteError,
+    RoutePing,
+    RoutePong,
     PresenceUpdate,
     Ping,
     Pong,
@@ -143,6 +150,41 @@ pub struct FileEncryptedChunkPayload {
     pub ciphertext: String,
     pub sender_fingerprint: String,
     pub timestamp: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RouteDescriptorPayload {
+    pub destination_node: String,
+    pub destination_callsign: Option<String>,
+    pub hop_count: u8,
+    pub score: i64,
+    pub trusted: bool,
+    pub encrypted_capable: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RouteAnnouncePayload {
+    pub routes: Vec<RouteDescriptorPayload>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RouteRequestPayload {
+    pub request_id: String,
+    pub destination_node: String,
+    pub ttl: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RouteResponsePayload {
+    pub request_id: String,
+    pub destination_node: String,
+    pub destination_callsign: Option<String>,
+    pub next_hop: String,
+    pub hop_count: u8,
+    pub score: i64,
+    pub route_trace: Vec<String>,
+    pub trusted: bool,
+    pub encrypted_capable: bool,
 }
 
 impl Packet {
@@ -555,6 +597,125 @@ impl Packet {
         )
     }
 
+    pub fn route_announce(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        routes: Vec<RouteDescriptorPayload>,
+    ) -> Self {
+        Self::new(
+            PacketType::RouteAnnounce,
+            node_id,
+            callsign,
+            None,
+            None,
+            json!(RouteAnnouncePayload { routes }),
+        )
+    }
+
+    pub fn route_request(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        request_id: impl Into<String>,
+        destination_node: impl Into<String>,
+        ttl: u8,
+    ) -> Self {
+        Self::new(
+            PacketType::RouteRequest,
+            node_id,
+            callsign,
+            None,
+            None,
+            json!(RouteRequestPayload {
+                request_id: request_id.into(),
+                destination_node: destination_node.into(),
+                ttl,
+            }),
+        )
+    }
+
+    pub fn route_response(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        response: RouteResponsePayload,
+    ) -> Self {
+        Self::new(
+            PacketType::RouteResponse,
+            node_id,
+            callsign,
+            None,
+            Some(target_node.into()),
+            json!(response),
+        )
+    }
+
+    pub fn mesh_relay(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        next_hop: impl Into<String>,
+        envelope: Value,
+    ) -> Self {
+        Self::new(
+            PacketType::MeshRelay,
+            node_id,
+            callsign,
+            None,
+            Some(next_hop.into()),
+            envelope,
+        )
+    }
+
+    pub fn route_error(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        destination_node: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            PacketType::RouteError,
+            node_id,
+            callsign,
+            None,
+            Some(target_node.into()),
+            json!({
+                "destination_node": destination_node.into(),
+                "reason": reason.into()
+            }),
+        )
+    }
+
+    pub fn route_ping(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            PacketType::RoutePing,
+            node_id,
+            callsign,
+            None,
+            Some(target_node.into()),
+            json!({}),
+        )
+    }
+
+    pub fn route_pong(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        target_node: impl Into<String>,
+        packet_id: Uuid,
+    ) -> Self {
+        Self::new(
+            PacketType::RoutePong,
+            node_id,
+            callsign,
+            None,
+            Some(target_node.into()),
+            json!({ "reply_to": packet_id }),
+        )
+    }
+
     fn file_control(
         packet_type: PacketType,
         node_id: impl Into<String>,
@@ -765,7 +926,12 @@ impl Packet {
             | PacketType::FileChunkAck
             | PacketType::FileTransferComplete
             | PacketType::FileTransferCancel
-            | PacketType::FileTransferError => {
+            | PacketType::FileTransferError
+            | PacketType::RouteResponse
+            | PacketType::MeshRelay
+            | PacketType::RouteError
+            | PacketType::RoutePing
+            | PacketType::RoutePong => {
                 if self
                     .target_node
                     .as_deref()
@@ -779,7 +945,10 @@ impl Packet {
                     });
                 }
             }
-            PacketType::System | PacketType::Error => {}
+            PacketType::RouteAnnounce
+            | PacketType::RouteRequest
+            | PacketType::System
+            | PacketType::Error => {}
         }
 
         if matches!(
@@ -901,6 +1070,57 @@ impl Packet {
             | PacketType::FileTransferError => {
                 require_payload_str(&self.payload, self.packet_type, "file_id")?;
             }
+            PacketType::RouteAnnounce => {
+                require_payload_array(&self.payload, self.packet_type, "routes")?;
+            }
+            PacketType::RouteRequest => {
+                require_payload_str(&self.payload, self.packet_type, "request_id")?;
+                require_payload_str(&self.payload, self.packet_type, "destination_node")?;
+                if !payload_has_number(&self.payload, "ttl") {
+                    return Err(ProtocolError::MissingField {
+                        packet_type: self.packet_type,
+                        field: "ttl",
+                    });
+                }
+            }
+            PacketType::RouteResponse => {
+                for field in ["request_id", "destination_node", "next_hop"] {
+                    require_payload_str(&self.payload, self.packet_type, field)?;
+                }
+                require_payload_array(&self.payload, self.packet_type, "route_trace")?;
+                for field in ["hop_count", "score"] {
+                    if self.payload.get(field).and_then(Value::as_i64).is_none() {
+                        return Err(ProtocolError::MissingField {
+                            packet_type: self.packet_type,
+                            field,
+                        });
+                    }
+                }
+            }
+            PacketType::MeshRelay => {
+                for field in [
+                    "mesh_packet_id",
+                    "source_node",
+                    "destination_node",
+                    "previous_hop",
+                    "route_trace",
+                    "inner_packet",
+                ] {
+                    require_payload_str_or_object(&self.payload, self.packet_type, field)?;
+                }
+                for field in ["ttl", "hop_count"] {
+                    if !payload_has_number(&self.payload, field) {
+                        return Err(ProtocolError::MissingField {
+                            packet_type: self.packet_type,
+                            field,
+                        });
+                    }
+                }
+            }
+            PacketType::RouteError => {
+                require_payload_str(&self.payload, self.packet_type, "destination_node")?;
+                require_payload_str(&self.payload, self.packet_type, "reason")?;
+            }
             _ => {}
         }
 
@@ -930,6 +1150,33 @@ fn require_payload_str(
 
 fn payload_has_number(payload: &Value, field: &'static str) -> bool {
     payload.get(field).and_then(Value::as_u64).is_some()
+}
+
+fn require_payload_array(
+    payload: &Value,
+    packet_type: PacketType,
+    field: &'static str,
+) -> ProtocolResult<()> {
+    if payload.get(field).and_then(Value::as_array).is_some() {
+        Ok(())
+    } else {
+        Err(ProtocolError::MissingField { packet_type, field })
+    }
+}
+
+fn require_payload_str_or_object(
+    payload: &Value,
+    packet_type: PacketType,
+    field: &'static str,
+) -> ProtocolResult<()> {
+    let Some(value) = payload.get(field) else {
+        return Err(ProtocolError::MissingField { packet_type, field });
+    };
+    if value.is_string() || value.is_object() || value.is_array() || value.is_number() {
+        Ok(())
+    } else {
+        Err(ProtocolError::MissingField { packet_type, field })
+    }
 }
 
 pub fn encode(packet: &Packet) -> ProtocolResult<Vec<u8>> {
@@ -1154,5 +1401,63 @@ mod tests {
         let value: Value = serde_json::from_slice(&encode(&packet).unwrap()).unwrap();
         assert_eq!(value["public_key"], "public");
         assert_eq!(value["signature"], "signature");
+    }
+
+    #[test]
+    fn phase_five_mesh_packets_validate() {
+        let route = RouteDescriptorPayload {
+            destination_node: "KY-A91C0D".into(),
+            destination_callsign: Some("Bruno".into()),
+            hop_count: 2,
+            score: 9000,
+            trusted: false,
+            encrypted_capable: true,
+        };
+        Packet::route_announce("KY-71AF92", "Helio", vec![route])
+            .validate()
+            .unwrap();
+        Packet::route_request("KY-71AF92", "Helio", "request-1", "KY-A91C0D", 5)
+            .validate()
+            .unwrap();
+        Packet::route_response(
+            "KY-AAAAAA",
+            "Ana",
+            "KY-71AF92",
+            RouteResponsePayload {
+                request_id: "request-1".into(),
+                destination_node: "KY-A91C0D".into(),
+                destination_callsign: Some("Bruno".into()),
+                next_hop: "KY-AAAAAA".into(),
+                hop_count: 2,
+                score: 9000,
+                route_trace: vec!["KY-AAAAAA".into(), "KY-A91C0D".into()],
+                trusted: true,
+                encrypted_capable: true,
+            },
+        )
+        .validate()
+        .unwrap();
+
+        let inner = Packet::direct_message("KY-71AF92", "Helio", "KY-A91C0D", "teste via mesh");
+        Packet::mesh_relay(
+            "KY-AAAAAA",
+            "Ana",
+            "KY-A91C0D",
+            json!({
+                "mesh_version": 1,
+                "mesh_packet_id": "mesh-1",
+                "source_node": "KY-71AF92",
+                "destination_node": "KY-A91C0D",
+                "previous_hop": "KY-AAAAAA",
+                "next_hop": "KY-A91C0D",
+                "ttl": 4,
+                "hop_count": 1,
+                "route_trace": ["KY-71AF92", "KY-AAAAAA"],
+                "created_at": "123",
+                "inner_packet": inner,
+            }),
+        )
+        .validate()
+        .unwrap();
     }
 }

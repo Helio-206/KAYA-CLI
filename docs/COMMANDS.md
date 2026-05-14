@@ -35,6 +35,10 @@ The parser is registry-based: command metadata defines aliases, validation, usag
 | `/trust-list` | `/trust-list` | Show known fingerprints and trust states. |
 | `/sessions` | `/sessions` | Show secure DM session state. |
 | `/close-session <peer>` | `/close-session Ana` | Close a secure DM session. |
+| `/routes` | `/routes` | List mesh routing table entries. |
+| `/route <target>` | `/route KY-A91C0D` | Show the best mesh route to a node id or callsign. |
+| `/mesh-status` | `/mesh-status` | Show mesh relay diagnostics. |
+| `/mesh-clear` | `/mesh-clear` | Clear mesh routes and seen-packet cache. |
 | `/history [room]` | `/history semana-info` | Show local room history. |
 | `/dm-history <peer>` | `/dm-history Helio` | Show local DM history with a peer. |
 | `/status` | `/status` | Show local status and counters. |
@@ -58,6 +62,7 @@ Aliases:
 - `/p` for `/presence`
 - `/id` for `/identity`
 - `/fp` for `/fingerprint`
+- `/mesh` for `/mesh-status`
 - `/q` or `/quit` for `/exit`
 
 ## Examples
@@ -72,6 +77,8 @@ Aliases:
 > /send Ana ./docs/PROTOCOL.md
 > /files
 > /sessions
+> /routes
+> /mesh-status
 > /msg KY-71AF92 teste privado
 > /presence busy
 > /history semana-info

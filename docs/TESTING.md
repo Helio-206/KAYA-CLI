@@ -43,6 +43,12 @@ cargo test
 - file transfer accept/reject/cancel state transitions;
 - encrypted file chunk decrypt success and tamper failure;
 - transfer metadata persistence;
+- mesh TTL decrement, hop count increment, and route trace update;
+- duplicate mesh packet rejection;
+- blocked peer relay denial and no-loop relay behavior;
+- route scoring, expiry, request/response, and table clear;
+- encrypted DM payload opacity through relay;
+- mesh config validation;
 - transport packet deduplication;
 - config TOML validation.
 
@@ -58,6 +64,21 @@ Peer registry benchmark:
 
 ```bash
 cargo run -p kaya-app --bin kaya-bench-peers -- 10000
+```
+
+File transfer benchmarks:
+
+```bash
+cargo run -p kaya-app --bin kaya-bench-file-chunking -- 8
+cargo run -p kaya-app --bin kaya-bench-file-reassembly -- 8
+```
+
+Mesh benchmarks:
+
+```bash
+cargo run -p kaya-app --bin kaya-bench-route-table -- 10000
+cargo run -p kaya-app --bin kaya-bench-mesh-dedup -- 10000
+cargo run -p kaya-app --bin kaya-bench-mesh-relay-simulated -- 10000
 ```
 
 These are lightweight operational benchmarks, not scientific performance suites.

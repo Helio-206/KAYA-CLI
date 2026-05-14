@@ -1,6 +1,7 @@
 mod events;
 mod files;
 mod input;
+mod mesh;
 mod network;
 mod presentation;
 
@@ -8,6 +9,7 @@ use crate::diagnostics::RuntimeDiagnostics;
 use kaya_commands::CommandRegistry;
 use kaya_events::{EventBus, KayaEvent};
 use kaya_files::{FileStore, FileTransferConfig, FileTransferManager};
+use kaya_mesh::{MeshPolicy, MeshState};
 use kaya_peer::PeerRegistry;
 use kaya_persistence::{ConfigStore, KayaConfig, Store};
 use kaya_security::{LocalIdentity, SecureSessionManager, TrustStore};
@@ -34,6 +36,7 @@ pub struct Runtime {
     files: FileTransferManager,
     file_store: FileStore,
     file_config: FileTransferConfig,
+    mesh: MeshState,
     store: Store,
     trust_store: TrustStore,
     sessions: SecureSessionManager,
@@ -59,6 +62,7 @@ pub struct RuntimeInit {
     pub trust_store: TrustStore,
     pub file_store: FileStore,
     pub file_config: FileTransferConfig,
+    pub mesh_policy: MeshPolicy,
 }
 
 impl Runtime {
@@ -74,6 +78,7 @@ impl Runtime {
             trust_store,
             file_store,
             file_config,
+            mesh_policy,
         } = init;
         let node_id = identity.node_id.clone();
         let callsign = identity.callsign.clone();
@@ -104,7 +109,7 @@ impl Runtime {
             ),
             identity: identity.clone(),
             identity_created,
-            node_id,
+            node_id: node_id.clone(),
             callsign,
             transport,
             event_rx: bus.subscribe(),
@@ -113,6 +118,7 @@ impl Runtime {
             files,
             file_store,
             file_config,
+            mesh: MeshState::new(&node_id, mesh_policy),
             store,
             trust_store,
             sessions: SecureSessionManager::new(identity),
@@ -151,12 +157,19 @@ impl Runtime {
                 }
                 _ = heartbeat.tick() => {
                     self.send_packet(self.heartbeat_packet()).await;
+                    self.send_packet(self.route_announce_packet()).await;
                 }
                 _ = prune.tick() => {
                     for event in self.peers.prune() {
                         self.publish_peer_event(event);
                     }
+                    for route in self.mesh.expire_routes() {
+                        self.publish(KayaEvent::RouteExpired {
+                            destination_node: route.destination_node,
+                        });
+                    }
                     self.sync_peers_to_ui();
+                    self.sync_mesh_to_ui();
                 }
                 _ = render.tick() => {
                     self.ui_state.diagnostics = self.diagnostics.to_ui();

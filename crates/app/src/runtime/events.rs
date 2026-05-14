@@ -331,6 +331,111 @@ impl Runtime {
                 self.system_message(format!("file hash mismatch {file_id}"));
                 self.sync_files_to_ui();
             }
+            KayaEvent::RouteDiscovered {
+                destination_node,
+                next_hop,
+                hop_count,
+            } => {
+                info!(
+                    %destination_node,
+                    %next_hop,
+                    hop_count,
+                    "ROUTE_RESPONSE_ACCEPTED"
+                );
+                self.ui_state.push_log(format!(
+                    "route discovered {destination_node} via {next_hop} hops={hop_count}"
+                ));
+                self.sync_mesh_to_ui();
+            }
+            KayaEvent::RouteExpired { destination_node } => {
+                self.ui_state
+                    .push_log(format!("route expired {destination_node}"));
+                self.sync_mesh_to_ui();
+            }
+            KayaEvent::RouteRequestSent {
+                destination_node,
+                request_id,
+            } => {
+                info!(%destination_node, %request_id, "ROUTE_REQUEST_SENT");
+                self.ui_state
+                    .push_log(format!("route request {request_id} for {destination_node}"));
+                self.sync_mesh_to_ui();
+            }
+            KayaEvent::RouteResponseReceived {
+                destination_node,
+                next_hop,
+                hop_count,
+            } => {
+                self.ui_state.push_log(format!(
+                    "route response {destination_node} via {next_hop} hops={hop_count}"
+                ));
+                self.sync_mesh_to_ui();
+            }
+            KayaEvent::MeshPacketRelayed {
+                mesh_packet_id,
+                destination_node,
+                next_hop,
+                hop_count,
+            } => {
+                info!(
+                    %mesh_packet_id,
+                    %destination_node,
+                    %next_hop,
+                    hop_count,
+                    "MESH_RELAY_FORWARD"
+                );
+                self.ui_state.push_log(format!(
+                    "mesh relayed {mesh_packet_id} to {destination_node} via {next_hop}"
+                ));
+                self.sync_mesh_to_ui();
+            }
+            KayaEvent::MeshPacketDropped {
+                mesh_packet_id,
+                reason,
+            } => {
+                info!(%mesh_packet_id, %reason, "MESH_PACKET_DROPPED");
+                self.ui_state
+                    .push_log(format!("mesh dropped {mesh_packet_id}: {reason}"));
+                self.sync_mesh_to_ui();
+            }
+            KayaEvent::MeshPacketDelivered {
+                mesh_packet_id,
+                source_node,
+                route_trace,
+            } => {
+                info!(%mesh_packet_id, %source_node, "MESH_DELIVERED");
+                self.ui_state.push_log(format!(
+                    "mesh delivered {mesh_packet_id} from {source_node} trace={}",
+                    route_trace.join(" -> ")
+                ));
+                self.sync_mesh_to_ui();
+            }
+            KayaEvent::RelayDenied {
+                source_node,
+                destination_node,
+                reason,
+            } => {
+                info!(
+                    %source_node,
+                    %destination_node,
+                    %reason,
+                    "RELAY_DENIED"
+                );
+                self.ui_state.push_log(format!(
+                    "relay denied {source_node} -> {destination_node}: {reason}"
+                ));
+                self.sync_mesh_to_ui();
+            }
+            KayaEvent::RouteError {
+                destination_node,
+                reason,
+            } => {
+                self.system_message(format!("route error {destination_node}: {reason}"));
+                self.sync_mesh_to_ui();
+            }
+            KayaEvent::MeshDiagnosticsUpdated => {
+                self.sync_mesh_to_ui();
+            }
             KayaEvent::SecurityWarning { node_id, message } => {
                 self.ui_state.security_warnings += 1;
                 let source = node_id.unwrap_or_else(|| "unknown".into());
@@ -390,6 +495,9 @@ impl Runtime {
             self.observe_peer(&packet);
             self.remember_peer(&packet);
             self.sync_peers_to_ui();
+            if self.route_mesh_packet(&packet).await {
+                return;
+            }
             if self.route_security_packet(&packet).await {
                 return;
             }
@@ -419,13 +527,14 @@ impl Runtime {
         self.sync_peers_to_ui();
     }
 
-    fn observe_peer(&mut self, packet: &Packet) {
+    pub(super) fn observe_peer(&mut self, packet: &Packet) {
         if let Some(event) = self.peers.observe_packet(packet) {
             self.publish_peer_event(event);
         }
+        self.observe_mesh_peer(packet);
     }
 
-    async fn route_packet(&mut self, packet: &Packet) {
+    pub(super) async fn route_packet(&mut self, packet: &Packet) {
         match self.rooms.route_packet(packet) {
             RouteOutcome::RoomMessage(message) => self.publish_room_message(message),
             RouteOutcome::DirectMessage(message) => {
@@ -436,12 +545,15 @@ impl Runtime {
                     body: message.body,
                     local: false,
                 });
-                self.send_packet(Packet::dm_ack(
-                    self.node_id.clone(),
-                    self.callsign.clone(),
-                    packet.node_id.clone(),
-                    packet.packet_id,
-                ))
+                self.send_packet_routed(
+                    Packet::dm_ack(
+                        self.node_id.clone(),
+                        self.callsign.clone(),
+                        packet.node_id.clone(),
+                        packet.packet_id,
+                    ),
+                    &packet.node_id,
+                )
                 .await;
             }
             RouteOutcome::Joined {
@@ -500,7 +612,7 @@ impl Runtime {
         }
     }
 
-    async fn route_security_packet(&mut self, packet: &Packet) -> bool {
+    pub(super) async fn route_security_packet(&mut self, packet: &Packet) -> bool {
         match packet.packet_type {
             PacketType::DmSessionRequest => {
                 if !self.packet_targets_local_node(packet) {
@@ -527,14 +639,17 @@ impl Runtime {
                             peer_node_id: packet.node_id.clone(),
                             session_id: accept.session_id.clone(),
                         });
-                        self.send_packet(Packet::dm_session_accept(
-                            self.node_id.clone(),
-                            self.callsign.clone(),
-                            packet.node_id.clone(),
-                            accept.session_id,
-                            accept.x25519_public_key,
-                            accept.fingerprint,
-                        ))
+                        self.send_packet_routed(
+                            Packet::dm_session_accept(
+                                self.node_id.clone(),
+                                self.callsign.clone(),
+                                packet.node_id.clone(),
+                                accept.session_id,
+                                accept.x25519_public_key,
+                                accept.fingerprint,
+                            ),
+                            &packet.node_id,
+                        )
                         .await;
                     }
                     Err(err) => self.publish(KayaEvent::SecurityWarning {
@@ -628,7 +743,7 @@ impl Runtime {
         }
     }
 
-    fn inspect_packet_security(&mut self, packet: &Packet) -> bool {
+    pub(super) fn inspect_packet_security(&mut self, packet: &Packet) -> bool {
         if self.trust_store.is_blocked(&packet.node_id) {
             self.publish(KayaEvent::SecurityWarning {
                 node_id: Some(packet.node_id.clone()),

@@ -24,3 +24,16 @@ fn missing_config_file_is_created_with_defaults() {
 
     let _ = std::fs::remove_dir_all(path);
 }
+
+#[test]
+fn mesh_config_validation_rejects_zero_limits() {
+    let mut config = KayaConfig::default();
+    config.mesh.max_ttl = 0;
+
+    assert!(config.validate().is_err());
+
+    let mut config = KayaConfig::default();
+    config.mesh.route_expiry_seconds = 0;
+
+    assert!(config.validate().is_err());
+}

@@ -67,6 +67,10 @@ impl Runtime {
             Command::TrustList => self.show_trust_list(),
             Command::Sessions => self.show_sessions(),
             Command::CloseSession { peer } => self.close_secure_session(&peer),
+            Command::Routes => self.show_routes(),
+            Command::Route { node_id } => self.show_route(&node_id),
+            Command::MeshStatus => self.show_mesh_status(),
+            Command::MeshClear => self.clear_mesh(),
             Command::History { room } => self.show_history(room.as_deref()),
             Command::DmHistory { peer } => self.show_dm_history(&peer),
             Command::Status => self.show_status(),
@@ -180,7 +184,19 @@ impl Runtime {
         let target = match self.peers.resolve_target_checked(&target) {
             TargetResolution::Found(peer) => peer,
             TargetResolution::NotFound(target) => {
-                self.system_message(format!("dm target not found: {target}"));
+                if let Some(peer) = self.resolve_mesh_target(&target) {
+                    self.send_direct_message_to(peer.node_id, peer.callsign, body)
+                        .await;
+                    return;
+                }
+                if kaya_shared::is_valid_node_id(&target) {
+                    self.send_route_request(&target).await;
+                    self.system_message(format!(
+                        "dm target not found locally: {target}; route request sent"
+                    ));
+                } else {
+                    self.system_message(format!("dm target not found: {target}"));
+                }
                 return;
             }
             TargetResolution::DuplicateCallsign { callsign, matches } => {
@@ -197,33 +213,27 @@ impl Runtime {
             return;
         }
 
-        if self.sessions.has_active(&target.node_id) {
-            self.send_encrypted_message(target.node_id.clone(), target.callsign.clone(), body)
-                .await;
-            return;
-        }
-
-        self.rooms
-            .add_local_direct_message(target.node_id.clone(), body.clone());
-        self.publish(KayaEvent::DirectMessageSent {
-            target_node: target.node_id.clone(),
-            target_callsign: target.callsign.clone(),
-            body: body.clone(),
-        });
-        self.send_packet(Packet::direct_message(
-            self.node_id.clone(),
-            self.callsign.clone(),
-            target.node_id,
-            body,
-        ))
-        .await;
+        self.send_direct_message_to(target.node_id, target.callsign, body)
+            .await;
     }
 
     async fn send_secure_direct_message(&mut self, target: String, body: String) {
         let target = match self.peers.resolve_target_checked(&target) {
             TargetResolution::Found(peer) => peer,
             TargetResolution::NotFound(target) => {
-                self.system_message(format!("secure dm target not found: {target}"));
+                if let Some(peer) = self.resolve_mesh_target(&target) {
+                    self.send_secure_direct_message_to(peer.node_id, peer.callsign, body)
+                        .await;
+                    return;
+                }
+                if kaya_shared::is_valid_node_id(&target) {
+                    self.send_route_request(&target).await;
+                    self.system_message(format!(
+                        "secure dm target not found locally: {target}; route request sent"
+                    ));
+                } else {
+                    self.system_message(format!("secure dm target not found: {target}"));
+                }
                 return;
             }
             TargetResolution::DuplicateCallsign { callsign, matches } => {
@@ -240,29 +250,83 @@ impl Runtime {
             return;
         }
 
-        if self.sessions.has_active(&target.node_id) {
-            self.send_encrypted_message(target.node_id, target.callsign, body)
+        self.send_secure_direct_message_to(target.node_id, target.callsign, body)
+            .await;
+    }
+
+    async fn send_direct_message_to(
+        &mut self,
+        target_node: String,
+        target_callsign: String,
+        body: String,
+    ) {
+        if self.trust_store.is_blocked(&target_node) {
+            self.system_message(format!("dm target is blocked: {target_node}"));
+            return;
+        }
+
+        if self.sessions.has_active(&target_node) {
+            self.send_encrypted_message(target_node, target_callsign, body)
                 .await;
             return;
         }
 
-        let request = self.sessions.start_request(&target.node_id);
+        self.rooms
+            .add_local_direct_message(target_node.clone(), body.clone());
+        self.publish(KayaEvent::DirectMessageSent {
+            target_node: target_node.clone(),
+            target_callsign: target_callsign.clone(),
+            body: body.clone(),
+        });
+        self.send_packet_routed(
+            Packet::direct_message(
+                self.node_id.clone(),
+                self.callsign.clone(),
+                target_node.clone(),
+                body,
+            ),
+            &target_node,
+        )
+        .await;
+    }
+
+    async fn send_secure_direct_message_to(
+        &mut self,
+        target_node: String,
+        target_callsign: String,
+        body: String,
+    ) {
+        if self.trust_store.is_blocked(&target_node) {
+            self.system_message(format!("secure dm target is blocked: {target_node}"));
+            return;
+        }
+
+        if self.sessions.has_active(&target_node) {
+            self.send_encrypted_message(target_node, target_callsign, body)
+                .await;
+            return;
+        }
+
+        let request = self.sessions.start_request(&target_node);
         self.pending_secure_messages
-            .entry(target.node_id.clone())
+            .entry(target_node.clone())
             .or_default()
             .push(body);
-        self.send_packet(Packet::dm_session_request(
-            self.node_id.clone(),
-            self.callsign.clone(),
-            target.node_id.clone(),
-            request.session_id,
-            request.x25519_public_key,
-            request.fingerprint,
-        ))
+        self.send_packet_routed(
+            Packet::dm_session_request(
+                self.node_id.clone(),
+                self.callsign.clone(),
+                target_node.clone(),
+                request.session_id,
+                request.x25519_public_key,
+                request.fingerprint,
+            ),
+            &target_node,
+        )
         .await;
         self.system_message(format!(
             "secure session requested with {}; message queued",
-            target.callsign
+            target_callsign
         ));
         self.sync_security_to_ui();
     }
@@ -297,18 +361,21 @@ impl Runtime {
                     body: body.clone(),
                     local: true,
                 });
-                self.send_packet(Packet::direct_message_encrypted(
-                    self.node_id.clone(),
-                    self.callsign.clone(),
-                    target_node,
-                    EncryptedDirectMessagePayload {
-                        session_id: payload.session_id,
-                        nonce: payload.nonce,
-                        ciphertext: payload.ciphertext,
-                        sender_fingerprint: payload.sender_fingerprint,
-                        timestamp: payload.timestamp,
-                    },
-                ))
+                self.send_packet_routed(
+                    Packet::direct_message_encrypted(
+                        self.node_id.clone(),
+                        self.callsign.clone(),
+                        target_node.clone(),
+                        EncryptedDirectMessagePayload {
+                            session_id: payload.session_id,
+                            nonce: payload.nonce,
+                            ciphertext: payload.ciphertext,
+                            sender_fingerprint: payload.sender_fingerprint,
+                            timestamp: payload.timestamp,
+                        },
+                    ),
+                    &target_node,
+                )
                 .await;
                 self.ui_state
                     .push_log(format!("encrypted dm sent to {target_callsign}"));
@@ -439,10 +506,11 @@ impl Runtime {
 
     fn show_status(&mut self) {
         self.system_message(format!(
-            "node={} room=#{} peers={} packets_tx={} packets_rx={} events={} secure_sessions={}",
+            "node={} room=#{} peers={} routes={} packets_tx={} packets_rx={} events={} secure_sessions={}",
             self.node_id,
             self.rooms.current_room(),
             self.peers.online_count(),
+            self.mesh.table.len(),
             self.ui_state.packets_tx,
             self.ui_state.packets_rx,
             self.diagnostics.counters.total(),

@@ -46,6 +46,18 @@ pub struct UiFileTransfer {
     pub hash_ok: Option<bool>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UiMeshDiagnostics {
+    pub enabled: bool,
+    pub routes: u64,
+    pub relayed_packets: u64,
+    pub delivered_packets: u64,
+    pub dropped_packets: u64,
+    pub avg_hop_count: u64,
+    pub last_route_discovered: Option<String>,
+    pub current_route_trace: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct UiDiagnostics {
     pub uptime_secs: u64,
@@ -76,6 +88,7 @@ pub struct UiState {
     pub current_members: Vec<String>,
     pub peers: Vec<UiPeer>,
     pub files: Vec<UiFileTransfer>,
+    pub mesh: UiMeshDiagnostics,
     pub identity_fingerprint: String,
     pub trusted_peers: usize,
     pub blocked_peers: usize,
@@ -114,6 +127,7 @@ impl UiState {
             current_members: Vec::new(),
             peers: Vec::new(),
             files: Vec::new(),
+            mesh: UiMeshDiagnostics::default(),
             identity_fingerprint: "--".into(),
             trusted_peers: 0,
             blocked_peers: 0,
