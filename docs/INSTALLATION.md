@@ -25,6 +25,13 @@ sudo mv kaya-cli-0.1.1-x86_64-unknown-linux-gnu/bin/kaya /usr/local/bin/
 kaya --version
 ```
 
+## Ubuntu 22.04 package install
+
+```bash
+sudo dpkg -i kaya-cli_0.1.1-1ubuntu22.04_amd64.deb
+kaya --version
+```
+
 ## Local install from this repository
 
 ```bash

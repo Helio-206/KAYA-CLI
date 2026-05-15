@@ -1,0 +1,11 @@
+Package: kaya-cli
+Version: 0.1.1-1ubuntu22.04
+Section: net
+Priority: optional
+Architecture: amd64
+Maintainer: KAYA CLI Contributors
+Homepage: https://github.com/natanielmatondo/KAYA-CLI
+Depends: libc6 (>= 2.35)
+Description: Local-first communication CLI for temporary digital communities
+ KAYA CLI is an offline-first, terminal-based communication system for local
+ networks, direct TCP links, and relay-assisted operation.

@@ -26,6 +26,7 @@ Build the release archive with:
 ./scripts/package-release.sh
 KAYA_TARGET=x86_64-pc-windows-gnu ./scripts/package-release.sh
 KAYA_TARGET=x86_64-apple-darwin ./scripts/package-release.sh
+./scripts/package-ubuntu-22.04.sh
 ```
 
 The script:
@@ -34,6 +35,12 @@ The script:
 - creates a versioned directory under `dist/`
 - copies the binary, core docs, and helper scripts
 - emits a `.tar.gz` archive for distribution
+
+The Ubuntu 22.04 package script:
+
+- builds `kaya` against glibc 2.35 via `cargo-zigbuild`
+- assembles a Debian package layout under `dist/`
+- emits a `.deb` package for Ubuntu 22.04 amd64
 
 Generate checksums after packaging:
 
