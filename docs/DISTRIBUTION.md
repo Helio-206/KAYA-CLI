@@ -9,6 +9,7 @@ KAYA `0.1.1` is packaged for binary-first distribution so users do not need to c
 ## Supported Optional Artifact
 
 - `kaya-cli-0.1.1-x86_64-pc-windows-gnu.zip`
+- `kaya-cli-0.1.1-x86_64-apple-darwin.tar.gz`
 
 This archive contains:
 
@@ -24,6 +25,7 @@ Phase 8 keeps `.deb` and macOS `.tar.gz` as optional tracks. Windows `.zip` pack
 ```bash
 ./scripts/package-release.sh
 KAYA_TARGET=x86_64-pc-windows-gnu ./scripts/package-release.sh
+KAYA_TARGET=x86_64-apple-darwin ./scripts/package-release.sh
 ./scripts/generate-checksums.sh
 ```
 

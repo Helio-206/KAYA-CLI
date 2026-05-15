@@ -24,6 +24,8 @@ Build the release archive with:
 
 ```bash
 ./scripts/package-release.sh
+KAYA_TARGET=x86_64-pc-windows-gnu ./scripts/package-release.sh
+KAYA_TARGET=x86_64-apple-darwin ./scripts/package-release.sh
 ```
 
 The script:

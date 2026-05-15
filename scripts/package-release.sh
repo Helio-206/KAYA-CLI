@@ -34,15 +34,28 @@ fi
 rm -rf "${staging_dir}"
 mkdir -p "${staging_dir}/bin" "${staging_dir}/docs" "${staging_dir}/scripts"
 
-cargo_args=(build --release -p kaya-app --bin kaya)
+if [[ "${target_triple}" == *apple-darwin* ]]; then
+    cargo_args=(--release -p kaya-app --bin kaya)
+else
+    cargo_args=(build --release -p kaya-app --bin kaya)
+fi
 build_dir="target/release"
+build_tool=(cargo)
 
 if [[ "${target_triple}" != "${host_triple}" ]]; then
     cargo_args+=(--target "${target_triple}")
     build_dir="target/${target_triple}/release"
 fi
 
-cargo "${cargo_args[@]}"
+if [[ "${target_triple}" == *apple-darwin* ]]; then
+    if ! command -v cargo-zigbuild >/dev/null 2>&1; then
+        printf 'cargo-zigbuild is required to package macOS artifacts from this host\n' >&2
+        exit 1
+    fi
+    build_tool=(cargo zigbuild)
+fi
+
+"${build_tool[@]}" "${cargo_args[@]}"
 
 install -m 0755 "${build_dir}/${binary_name}" "${staging_dir}/bin/${binary_name}"
 install -m 0644 README.md LICENSE Cargo.toml "${staging_dir}/"
