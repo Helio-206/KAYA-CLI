@@ -34,4 +34,4 @@ Your application can then:
 
 ## Current boundary
 
-For `0.1.0`, the SDK is intended for single-process embedding. The daemon model is documented separately in [DAEMON.md](DAEMON.md).
+For `0.1.1`, the SDK is intended for single-process embedding. The daemon model is documented separately in [DAEMON.md](DAEMON.md).

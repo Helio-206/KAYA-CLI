@@ -58,6 +58,12 @@ pub enum Command {
     ListenStatus,
     MeshStatus,
     MeshClear,
+    VoiceJoin { room: String },
+    VoiceLeave,
+    VoiceMute,
+    VoiceUnmute,
+    PushToTalk,
+    VoiceStatus,
     History { room: Option<String> },
     DmHistory { peer: String },
     Status,
@@ -117,6 +123,12 @@ pub enum CommandKind {
     ListenStatus,
     MeshStatus,
     MeshClear,
+    VoiceJoin,
+    VoiceLeave,
+    VoiceMute,
+    VoiceUnmute,
+    PushToTalk,
+    VoiceStatus,
     History,
     DmHistory,
     Status,
@@ -479,6 +491,48 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         description: "clear mesh routing table and dedup cache",
     },
     CommandSpec {
+        kind: CommandKind::VoiceJoin,
+        name: "voice-join",
+        aliases: &["vjoin"],
+        usage: "/voice-join <room>",
+        description: "join a live audio space for a room",
+    },
+    CommandSpec {
+        kind: CommandKind::VoiceLeave,
+        name: "voice-leave",
+        aliases: &["vleave"],
+        usage: "/voice-leave",
+        description: "leave the active live audio space",
+    },
+    CommandSpec {
+        kind: CommandKind::VoiceMute,
+        name: "voice-mute",
+        aliases: &["vmute"],
+        usage: "/voice-mute",
+        description: "mute local microphone in the active live audio space",
+    },
+    CommandSpec {
+        kind: CommandKind::VoiceUnmute,
+        name: "voice-unmute",
+        aliases: &["vunmute"],
+        usage: "/voice-unmute",
+        description: "unmute local microphone in the active live audio space",
+    },
+    CommandSpec {
+        kind: CommandKind::PushToTalk,
+        name: "ptt",
+        aliases: &["push-to-talk"],
+        usage: "/ptt",
+        description: "toggle push-to-talk hold state for voice",
+    },
+    CommandSpec {
+        kind: CommandKind::VoiceStatus,
+        name: "voice-status",
+        aliases: &["vstatus"],
+        usage: "/voice-status",
+        description: "show live audio space diagnostics",
+    },
+    CommandSpec {
         kind: CommandKind::History,
         name: "history",
         aliases: &[],
@@ -700,6 +754,14 @@ impl CommandRegistry {
             CommandKind::ListenStatus => Ok(Command::ListenStatus),
             CommandKind::MeshStatus => Ok(Command::MeshStatus),
             CommandKind::MeshClear => Ok(Command::MeshClear),
+            CommandKind::VoiceJoin => Ok(Command::VoiceJoin {
+                room: parse_room_arg(args, spec.usage)?,
+            }),
+            CommandKind::VoiceLeave => Ok(Command::VoiceLeave),
+            CommandKind::VoiceMute => Ok(Command::VoiceMute),
+            CommandKind::VoiceUnmute => Ok(Command::VoiceUnmute),
+            CommandKind::PushToTalk => Ok(Command::PushToTalk),
+            CommandKind::VoiceStatus => Ok(Command::VoiceStatus),
             CommandKind::History => Ok(Command::History {
                 room: first_arg(args).map(validate_room_name).transpose()?,
             }),
@@ -913,6 +975,8 @@ mod tests {
         assert!(help.contains("/routes"));
         assert!(help.contains("/relay-status"));
         assert!(help.contains("/connect <ip>:<port>"));
+        assert!(help.contains("/voice-join <room>"));
+        assert!(help.contains("/voice-status"));
     }
 
     #[test]
@@ -1054,6 +1118,38 @@ mod tests {
 
         assert!(registry.parse("/listen 0").is_err());
         assert!(registry.parse("/listen bad").is_err());
+    }
+
+    #[test]
+    fn parses_voice_commands() {
+        let registry = CommandRegistry::default();
+
+        assert_eq!(
+            registry.parse("/voice-join Semana-Info").unwrap(),
+            ParsedInput::Command(Command::VoiceJoin {
+                room: "semana-info".into()
+            })
+        );
+        assert_eq!(
+            registry.parse("/vleave").unwrap(),
+            ParsedInput::Command(Command::VoiceLeave)
+        );
+        assert_eq!(
+            registry.parse("/vmute").unwrap(),
+            ParsedInput::Command(Command::VoiceMute)
+        );
+        assert_eq!(
+            registry.parse("/vunmute").unwrap(),
+            ParsedInput::Command(Command::VoiceUnmute)
+        );
+        assert_eq!(
+            registry.parse("/ptt").unwrap(),
+            ParsedInput::Command(Command::PushToTalk)
+        );
+        assert_eq!(
+            registry.parse("/voice-status").unwrap(),
+            ParsedInput::Command(Command::VoiceStatus)
+        );
     }
 
     #[test]

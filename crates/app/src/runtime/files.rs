@@ -61,6 +61,18 @@ impl Runtime {
             self.system_message(format!("file target is blocked: {target_node}"));
             return;
         }
+        let path_buf = std::path::PathBuf::from(&path);
+        if !path_buf.exists() {
+            let cwd = std::env::current_dir()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|_| "--".into());
+            self.system_message(format!("file not found: {path} (cwd: {cwd})"));
+            return;
+        }
+        if !path_buf.is_file() {
+            self.system_message(format!("path is not a file: {path}"));
+            return;
+        }
         let security = if self.sessions.has_active(&target_node) {
             TransferSecurity::Encrypted
         } else {
@@ -68,7 +80,7 @@ impl Runtime {
         };
         let session = match self.files.prepare_outgoing(
             OutgoingFileRequest {
-                path: path.into(),
+                path: path_buf,
                 sender_node_id: self.node_id.clone(),
                 sender_callsign: self.callsign.clone(),
                 peer_node_id: target_node.clone(),
@@ -79,7 +91,7 @@ impl Runtime {
         ) {
             Ok(session) => session.clone(),
             Err(err) => {
-                self.system_message(err.to_string());
+                self.system_message(format!("file send failed for {path}: {err}"));
                 return;
             }
         };

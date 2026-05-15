@@ -18,7 +18,7 @@ KAYA is a strong local-first prototype and release candidate, but it is not a fi
 ## Mesh Boundaries
 
 - Multi-hop relay exists for selected traffic types.
-- File chunks over mesh are not implemented in `v0.1.0`.
+- File chunks over mesh are not implemented in `v0.1.1`.
 - Route quality is heuristic and locally observed, not globally verified.
 - Relay behavior is not a substitute for a mature routed transport.
 

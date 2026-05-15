@@ -160,6 +160,42 @@ impl Runtime {
                     .unwrap_or_default();
                 self.ui_state.push_log(format!("peer {node_id} left{room}"));
             }
+            KayaEvent::VoiceJoined {
+                node_id,
+                callsign,
+                room,
+                session_id,
+                local,
+            } => {
+                if local {
+                    self.ui_state
+                        .push_log(format!("voice joined #{room} {session_id}"));
+                    self.system_message(format!("voice joined #{room}"));
+                } else {
+                    self.ui_state.push_log(format!(
+                        "voice active #{room} {callsign} {node_id} {session_id}"
+                    ));
+                }
+                self.sync_voice_to_ui();
+            }
+            KayaEvent::VoiceLeft {
+                node_id,
+                room,
+                session_id,
+                local,
+            } => {
+                let suffix = session_id
+                    .map(|value| format!(" {value}"))
+                    .unwrap_or_default();
+                if local {
+                    self.ui_state.push_log(format!("voice left #{room}{suffix}"));
+                    self.system_message(format!("voice left #{room}"));
+                } else {
+                    self.ui_state
+                        .push_log(format!("voice closed #{room} {node_id}{suffix}"));
+                }
+                self.sync_voice_to_ui();
+            }
             KayaEvent::RoomMessageReceived {
                 room,
                 from_node,
@@ -589,6 +625,9 @@ impl Runtime {
             if self.route_file_packet(&packet).await {
                 return;
             }
+            if self.route_voice_packet(&packet).await {
+                return;
+            }
             self.route_packet(&packet).await;
 
             for packet in self.state_sync_for(&packet) {
@@ -1012,12 +1051,20 @@ fn secure_packet_requires_signature(packet_type: PacketType) -> bool {
             | PacketType::DmSessionAccept
             | PacketType::DirectMessageEncrypted
             | PacketType::FileChunkEncrypted
+            | PacketType::VoiceStart
+            | PacketType::VoiceStop
+            | PacketType::VoiceFrame
+            | PacketType::VoiceHeartbeat
     )
 }
 
 fn is_noisy_packet_event(packet_type: PacketType) -> bool {
     matches!(
         packet_type,
-        PacketType::Heartbeat | PacketType::RouteAnnounce | PacketType::PresenceUpdate
+        PacketType::Heartbeat
+            | PacketType::RouteAnnounce
+            | PacketType::PresenceUpdate
+            | PacketType::VoiceHeartbeat
+            | PacketType::VoiceFrame
     )
 }

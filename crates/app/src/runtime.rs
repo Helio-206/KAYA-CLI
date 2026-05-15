@@ -6,6 +6,8 @@ mod input;
 mod mesh;
 mod network;
 mod presentation;
+mod voice;
+mod voice_media;
 
 use crate::diagnostics::RuntimeDiagnostics;
 use kaya_commands::CommandRegistry;
@@ -18,7 +20,8 @@ use kaya_protocol::RelayPeerDescriptor;
 use kaya_security::{LocalIdentity, SecureSessionManager, TrustStore};
 use kaya_shared::{PresenceStatus, Result};
 use kaya_transport::{MulticastTransport, PacketDeduplicator};
-use kaya_ui::{TerminalUi, UiState};
+use kaya_ui::{TerminalAction, TerminalUi, UiState};
+use kaya_voice::VoiceState;
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -26,6 +29,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time;
 use tracing::info;
+use voice_media::VoiceMediaRuntime;
 
 #[derive(Debug, Clone)]
 pub(super) struct PendingSecureQueue {
@@ -59,6 +63,7 @@ pub struct Runtime {
     timeouts: TimeoutSettings,
     commands: CommandRegistry,
     ui_state: UiState,
+    voice: VoiceState,
     diagnostics: RuntimeDiagnostics,
     presence: PresenceStatus,
     dedup: PacketDeduplicator,
@@ -72,6 +77,7 @@ pub struct Runtime {
     direct_listener_task: Option<JoinHandle<()>>,
     direct_listener_addr: Option<String>,
     direct_connections: HashMap<String, direct::DirectConnectionHandle>,
+    voice_media: Option<VoiceMediaRuntime>,
     network_shutdown_tx: Option<watch::Sender<bool>>,
 }
 
@@ -134,6 +140,8 @@ impl Runtime {
             }
         }
         let (direct_tx, direct_rx) = mpsc::unbounded_channel();
+        let voice = VoiceState::new(&config.voice);
+        ui_state.voice.enabled = voice.enabled;
 
         Self {
             peers: PeerRegistry::with_timeout(
@@ -164,6 +172,7 @@ impl Runtime {
             timeouts,
             commands: CommandRegistry::default(),
             ui_state,
+            voice,
             diagnostics,
             presence: PresenceStatus::Online,
             dedup: PacketDeduplicator::new(4096),
@@ -177,6 +186,7 @@ impl Runtime {
             direct_listener_task: None,
             direct_listener_addr: None,
             direct_connections: HashMap::new(),
+            voice_media: None,
             network_shutdown_tx: None,
         }
     }
@@ -211,8 +221,21 @@ impl Runtime {
                         self.handle_direct_runtime_event(event).await;
                     }
                 }
+                voice_event = async {
+                    match self.voice_media.as_mut() {
+                        Some(runtime) => runtime.event_rx.recv().await,
+                        None => std::future::pending::<Option<voice_media::VoiceRuntimeEvent>>().await,
+                    }
+                } => {
+                    if let Some(event) = voice_event {
+                        self.handle_voice_runtime_event(event).await;
+                    }
+                }
                 _ = heartbeat.tick() => {
                     self.send_packet(self.heartbeat_packet()).await;
+                    if let Some(packet) = self.voice_heartbeat_packet() {
+                        self.send_packet(packet).await;
+                    }
                     self.send_packet(self.route_announce_packet()).await;
                 }
                 _ = prune.tick() => {
@@ -229,12 +252,18 @@ impl Runtime {
                     self.sync_mesh_to_ui();
                 }
                 _ = render.tick() => {
-                    if let Some(input) = ui.poll_input(&mut self.ui_state, Duration::from_millis(0))? {
-                        if self.handle_input(input).await? {
-                            self.publish(KayaEvent::ShutdownInitiated {
-                                reason: "operator requested exit".into(),
-                            });
-                            break;
+                    if let Some(action) = ui.poll_input(&mut self.ui_state, Duration::from_millis(0))? {
+                        match action {
+                            TerminalAction::Submit(input) => {
+                                if self.handle_input(input).await? {
+                                    self.publish(KayaEvent::ShutdownInitiated {
+                                        reason: "operator requested exit".into(),
+                                    });
+                                    break;
+                                }
+                            }
+                            TerminalAction::VoicePttStart => self.set_voice_ptt_holding(true).await,
+                            TerminalAction::VoicePttStop => self.set_voice_ptt_holding(false).await,
                         }
                     }
                     self.ui_state.diagnostics = self.diagnostics.to_ui();
@@ -249,6 +278,7 @@ impl Runtime {
     }
 
     async fn shutdown(&mut self) -> Result<()> {
+        self.stop_voice_media();
         self.send_packet(self.leave_packet()).await;
         self.config.last_room = Some(self.rooms.current_room().to_string());
         self.config_store.save(&self.config)?;

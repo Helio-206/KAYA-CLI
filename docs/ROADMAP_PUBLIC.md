@@ -2,7 +2,7 @@
 
 This roadmap is written for public readers. It separates what exists now from what is intentionally future work.
 
-## v0.1.0 Release Candidate
+## v0.1.1 Release Candidate
 
 Focus:
 

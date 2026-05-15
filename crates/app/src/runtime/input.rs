@@ -90,6 +90,12 @@ impl Runtime {
             Command::ListenStatus => self.show_direct_listener_status(),
             Command::MeshStatus => self.show_mesh_status(),
             Command::MeshClear => self.clear_mesh(),
+            Command::VoiceJoin { room } => self.join_voice(&room).await,
+            Command::VoiceLeave => self.leave_voice("operator-left").await,
+            Command::VoiceMute => self.set_voice_muted(true).await,
+            Command::VoiceUnmute => self.set_voice_muted(false).await,
+            Command::PushToTalk => self.toggle_voice_ptt().await,
+            Command::VoiceStatus => self.show_voice_status(),
             Command::History { room } => self.show_history(room.as_deref()),
             Command::DmHistory { peer } => self.show_dm_history(&peer),
             Command::Status => self.show_status(),
@@ -155,8 +161,17 @@ impl Runtime {
     }
 
     async fn leave_room(&mut self, room: &str) {
+        let voice_attached = self
+            .voice
+            .current
+            .as_ref()
+            .map(|session| session.room == room)
+            .unwrap_or(false);
         match self.rooms.leave(room) {
             Ok(room) => {
+                if voice_attached {
+                    self.leave_voice("room-left").await;
+                }
                 self.publish(KayaEvent::RoomLeft {
                     node_id: self.node_id.clone(),
                     room: Some(room.clone()),
@@ -546,10 +561,17 @@ impl Runtime {
     }
 
     fn show_status(&mut self) {
+        let voice_room = self
+            .voice
+            .current
+            .as_ref()
+            .map(|session| format!("#{}", session.room))
+            .unwrap_or_else(|| "--".into());
         self.system_message(format!(
-            "node={} room=#{} peers={} direct={} routes={} relay_connected={} relay_peers={} packets_tx={} packets_rx={} events={} secure_sessions={} profile={} demo={}",
+            "node={} room=#{} voice={} peers={} direct={} routes={} relay_connected={} relay_peers={} packets_tx={} packets_rx={} events={} secure_sessions={} profile={} demo={}",
             self.node_id,
             self.rooms.current_room(),
+            voice_room,
             self.peers.online_count(),
             self.direct_connections.len(),
             self.mesh.table.len(),

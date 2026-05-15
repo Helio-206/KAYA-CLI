@@ -49,8 +49,46 @@ cargo test
 - route scoring, expiry, request/response, and table clear;
 - encrypted DM payload opacity through relay;
 - mesh config validation;
+- voice command parsing, protocol validation, and runtime/UI voice state projection;
+- push-to-talk keyboard handling in the TUI;
+- voice config TOML validation;
 - transport packet deduplication;
 - config TOML validation.
+
+## Voice Validation
+
+Default build without native audio host integration:
+
+```bash
+cargo test -p kaya-voice -p kaya-persistence -p kaya-protocol
+cargo test -p kaya-ui -p kaya-events -p kaya-rooms -p kaya-app
+```
+
+Linux voice media path uses `arecord` and `aplay` at runtime, so a functional end-to-end voice check also needs those binaries available on the host.
+Windows voice media path uses the native `cpal` backend and can be cross-checked with:
+
+```bash
+cargo check -p kaya-app --target x86_64-pc-windows-gnu
+```
+
+Optional Linux native audio validation:
+
+```bash
+sudo apt-get install -y libasound2-dev
+cargo test -p kaya-voice -p kaya-app --features kaya-voice/native-audio
+```
+
+The default build keeps `native-audio` disabled so the workspace compiles even when ALSA development headers are unavailable.
+
+## Release E2E Smoke
+
+Validate the packaged release artifact end to end on Linux with:
+
+```bash
+./scripts/test-release-e2e.sh
+```
+
+The script extracts the packaged archive, checks the expected release layout, verifies `--version` and `--about`, and exercises `install-local.sh` against the packaged binary in an isolated install directory.
 
 ## Benchmarks
 

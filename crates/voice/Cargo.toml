@@ -1,0 +1,17 @@
+[package]
+name = "kaya-voice"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[features]
+default = []
+native-audio = ["dep:cpal"]
+
+[dependencies]
+cpal = { version = "0.15", optional = true }
+kaya-shared = { path = "../shared" }
+serde.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

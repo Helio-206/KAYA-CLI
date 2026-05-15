@@ -122,6 +122,7 @@ impl Runtime {
         self.ui_state.space = self.rooms.current_room().to_string();
         self.ui_state.presence = self.presence;
         self.sync_security_to_ui();
+        self.sync_voice_to_ui();
         self.sync_files_to_ui();
         self.sync_mesh_to_ui();
     }
@@ -131,6 +132,33 @@ impl Runtime {
         self.ui_state.trusted_peers = self.trust_store.trusted_count();
         self.ui_state.blocked_peers = self.trust_store.blocked_count();
         self.ui_state.secure_sessions = self.sessions.active_count();
+    }
+
+    pub(super) fn sync_voice_to_ui(&mut self) {
+        self.ui_state.voice.enabled = self.voice.enabled;
+        self.ui_state.voice.room = self.voice.current.as_ref().map(|session| session.room.clone());
+        self.ui_state.voice.session_id = self
+            .voice
+            .current
+            .as_ref()
+            .map(|session| session.session_id.clone());
+        self.ui_state.voice.muted = self
+            .voice
+            .current
+            .as_ref()
+            .map(|session| session.muted)
+            .unwrap_or(false);
+        self.ui_state.voice.push_to_talk = self
+            .voice
+            .current
+            .as_ref()
+            .map(|session| matches!(session.ptt, kaya_voice::PushToTalkState::Holding))
+            .unwrap_or(false);
+        self.ui_state.voice.active_speakers = self.voice.active_speakers.values().cloned().collect();
+        self.ui_state.voice.active_speakers.sort();
+        self.ui_state.voice.frames_rx = self.voice.frames_rx;
+        self.ui_state.voice.frames_tx = self.voice.frames_tx;
+        self.ui_state.voice.packets_lost = self.voice.packets_lost;
     }
 
     pub(super) fn sync_files_to_ui(&mut self) {

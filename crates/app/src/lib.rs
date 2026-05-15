@@ -42,7 +42,7 @@ where
     let mut config = config_store.load_or_create()?;
     config.apply_profile(options.profile);
     apply_runtime_overrides(&mut config, &options)?;
-    init_tracing(&config.log_level);
+    init_tracing(&config.log_level, &data_dir);
     config_store.save(&config)?;
 
     if let Some(RuntimeCommand::Relay(command)) = &options.command {
@@ -137,7 +137,10 @@ impl RuntimeOptions {
 }
 
 pub(crate) fn about_text() -> &'static str {
-    "0.1.0\nLocal-first communication for temporary digital communities.\nUse --demo for isolated presentation mode, --relay tcp://host:7777 for WAN bridging, or kaya relay --bind 0.0.0.0:7777 to host a relay."
+    concat!(
+        env!("CARGO_PKG_VERSION"),
+        "\nLocal-first communication for temporary digital communities.\nUse --demo for isolated presentation mode, --relay tcp://host:7777 for WAN bridging, or kaya relay --bind 0.0.0.0:7777 to host a relay."
+    )
 }
 
 fn file_transfer_config(config: &kaya_persistence::KayaConfig) -> FileTransferConfig {

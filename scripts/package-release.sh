@@ -53,6 +53,7 @@ install -m 0644 \
     docs/DISTRIBUTION.md \
     docs/INSTALLATION.md \
     docs/NGROK.md \
+    docs/PROTOCOL.md \
     docs/RELEASE.md \
     docs/RELAY_SECURITY.md \
     docs/SDK.md \

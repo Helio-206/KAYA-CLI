@@ -74,7 +74,13 @@ impl Runtime {
                 node_id: self.node_id.clone(),
                 callsign: self.callsign.clone(),
                 fingerprint: self.identity.fingerprint.clone(),
-                capabilities: vec!["rooms".into(), "dm".into(), "mesh".into(), "files".into()],
+                capabilities: vec![
+                    "rooms".into(),
+                    "dm".into(),
+                    "mesh".into(),
+                    "files".into(),
+                    "voice_spaces".into(),
+                ],
             },
             RelayPolicy {
                 allow_unknown: self.file_config.accept_from_unknown,
@@ -309,7 +315,22 @@ impl Runtime {
                 | PacketType::RoomMembersResponse
                 | PacketType::PresenceUpdate
                 | PacketType::RoomMessage
+                | PacketType::VoiceStart
+                | PacketType::VoiceStop
+                | PacketType::VoiceFrame
+                | PacketType::VoiceHeartbeat
         ) {
+            return;
+        }
+
+        if matches!(
+            packet.packet_type,
+            PacketType::VoiceStart
+                | PacketType::VoiceStop
+                | PacketType::VoiceFrame
+                | PacketType::VoiceHeartbeat
+        ) && !self.config.voice.allow_relay
+        {
             return;
         }
 
@@ -424,6 +445,18 @@ impl Runtime {
                     room_name.clone(),
                     self.rooms.members(&room_name),
                 ));
+            }
+        }
+
+        if let Some(session) = &self.voice.current {
+            packets.push(Packet::voice_start(
+                self.node_id.clone(),
+                self.callsign.clone(),
+                session.room.clone(),
+                self.voice_start_payload(session),
+            ));
+            if let Some(packet) = self.voice_heartbeat_packet() {
+                packets.push(packet);
             }
         }
 

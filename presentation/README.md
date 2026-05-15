@@ -71,7 +71,7 @@ Use [docs/LIMITATIONS.md](../docs/LIMITATIONS.md).
 
 Position the next milestones clearly:
 
-- `v0.1.0 RC`: current LAN-first release candidate
+- `v0.1.1 RC`: current LAN-first release candidate
 - `v0.2.0`: binary protocol
 - `v0.3.0`: QUIC exploration
 - `v0.4.0`: mobile and Android

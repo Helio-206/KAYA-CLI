@@ -1,4 +1,5 @@
 use kaya_shared::{KayaError, Result, DEFAULT_ROOM};
+use kaya_voice::VoiceConfig;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -28,6 +29,8 @@ pub struct KayaConfig {
     pub relay: RelaySettings,
     #[serde(default)]
     pub timeouts: TimeoutSettings,
+    #[serde(default)]
+    pub voice: VoiceConfig,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,6 +95,7 @@ impl Default for KayaConfig {
             mesh: MeshSettings::default(),
             relay: RelaySettings::default(),
             timeouts: TimeoutSettings::default(),
+            voice: VoiceConfig::default(),
         }
     }
 }
@@ -327,6 +331,9 @@ impl KayaConfig {
                 "timeout values must be greater than 0".into(),
             ));
         }
+        self.voice
+            .validate()
+            .map_err(|err| KayaError::Config(err.to_string()))?;
         Ok(())
     }
 
@@ -584,6 +591,7 @@ mod tests {
             mesh: MeshSettings::default(),
             relay: RelaySettings::default(),
             timeouts: TimeoutSettings::default(),
+            voice: VoiceConfig::default(),
         };
 
         config_store.save(&config).unwrap();
@@ -639,6 +647,14 @@ mod tests {
     fn rejects_zero_timeout_settings() {
         let mut config = KayaConfig::default();
         config.timeouts.shutdown_ms = 0;
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_voice_settings() {
+        let mut config = KayaConfig::default();
+        config.voice.opus_frame_ms = 15;
 
         assert!(config.validate().is_err());
     }

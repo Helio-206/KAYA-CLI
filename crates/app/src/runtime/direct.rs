@@ -655,7 +655,8 @@ fn direct_hello_packet(node_id: &str, callsign: &str, room: &str, fingerprint: &
             "mesh",
             "relay",
             "rooms",
-            "presence"
+            "presence",
+            "voice_spaces"
         ],
     });
     packet
@@ -675,6 +676,10 @@ fn mirrors_over_direct(packet_type: PacketType) -> bool {
             | PacketType::RoomMembersResponse
             | PacketType::PresenceUpdate
             | PacketType::RoomMessage
+            | PacketType::VoiceStart
+            | PacketType::VoiceStop
+            | PacketType::VoiceFrame
+            | PacketType::VoiceHeartbeat
             | PacketType::RouteAnnounce
             | PacketType::RouteRequest
     )

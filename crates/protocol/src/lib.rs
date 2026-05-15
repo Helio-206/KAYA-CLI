@@ -65,6 +65,10 @@ pub enum PacketType {
     RoomMembersRequest,
     RoomMembersResponse,
     RoomMessage,
+    VoiceStart,
+    VoiceStop,
+    VoiceFrame,
+    VoiceHeartbeat,
     DirectMessage,
     DmAck,
     DmSessionRequest,
@@ -119,6 +123,41 @@ pub struct EncryptedDirectMessagePayload {
     pub ciphertext: String,
     pub sender_fingerprint: String,
     pub timestamp: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoiceStartPayload {
+    pub session_id: String,
+    pub codec: String,
+    pub bitrate: u32,
+    pub frame_ms: u16,
+    pub muted: bool,
+    pub push_to_talk: bool,
+    pub encrypted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoiceStopPayload {
+    pub session_id: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoiceFramePayload {
+    pub session_id: String,
+    pub sequence: u64,
+    pub timestamp: String,
+    pub opus_payload: Vec<u8>,
+    pub encrypted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoiceHeartbeatPayload {
+    pub session_id: String,
+    pub muted: bool,
+    pub push_to_talk: bool,
+    pub speaking: bool,
+    pub packets_lost: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -293,7 +332,8 @@ impl Packet {
                     "file_transfer",
                     "mesh",
                     "relay",
-                    "direct_tcp"
+                    "direct_tcp",
+                    "voice_spaces"
                 ],
                 "agent": "kaya-cli"
             }),
@@ -577,6 +617,70 @@ impl Packet {
             Some(room.into()),
             None,
             json!({ "body": body.into() }),
+        )
+    }
+
+    pub fn voice_start(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        room: impl Into<String>,
+        payload: VoiceStartPayload,
+    ) -> Self {
+        Self::new(
+            PacketType::VoiceStart,
+            node_id,
+            callsign,
+            Some(room.into()),
+            None,
+            json!(payload),
+        )
+    }
+
+    pub fn voice_stop(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        room: impl Into<String>,
+        payload: VoiceStopPayload,
+    ) -> Self {
+        Self::new(
+            PacketType::VoiceStop,
+            node_id,
+            callsign,
+            Some(room.into()),
+            None,
+            json!(payload),
+        )
+    }
+
+    pub fn voice_frame(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        room: impl Into<String>,
+        payload: VoiceFramePayload,
+    ) -> Self {
+        Self::new(
+            PacketType::VoiceFrame,
+            node_id,
+            callsign,
+            Some(room.into()),
+            None,
+            json!(payload),
+        )
+    }
+
+    pub fn voice_heartbeat(
+        node_id: impl Into<String>,
+        callsign: impl Into<String>,
+        room: impl Into<String>,
+        payload: VoiceHeartbeatPayload,
+    ) -> Self {
+        Self::new(
+            PacketType::VoiceHeartbeat,
+            node_id,
+            callsign,
+            Some(room.into()),
+            None,
+            json!(payload),
         )
     }
 
@@ -1114,7 +1218,11 @@ impl Packet {
             | PacketType::RoomMembersRequest
             | PacketType::RoomMembersResponse
             | PacketType::PresenceUpdate
-            | PacketType::RoomMessage => {
+            | PacketType::RoomMessage
+            | PacketType::VoiceStart
+            | PacketType::VoiceStop
+            | PacketType::VoiceFrame
+            | PacketType::VoiceHeartbeat => {
                 let room = self.room.as_deref().unwrap_or_default();
                 if room.trim().is_empty() {
                     return Err(ProtocolError::MissingField {
@@ -1246,6 +1354,65 @@ impl Packet {
                     "timestamp",
                 ] {
                     if !payload_has_str(&self.payload, field) {
+                        return Err(ProtocolError::MissingField {
+                            packet_type: self.packet_type,
+                            field,
+                        });
+                    }
+                }
+            }
+            PacketType::VoiceStart => {
+                for field in ["session_id", "codec"] {
+                    if !payload_has_str(&self.payload, field) {
+                        return Err(ProtocolError::MissingField {
+                            packet_type: self.packet_type,
+                            field,
+                        });
+                    }
+                }
+                for field in ["bitrate", "frame_ms"] {
+                    if !payload_has_number(&self.payload, field) {
+                        return Err(ProtocolError::MissingField {
+                            packet_type: self.packet_type,
+                            field,
+                        });
+                    }
+                }
+                for field in ["muted", "push_to_talk", "encrypted"] {
+                    if !payload_has_bool(&self.payload, field) {
+                        return Err(ProtocolError::MissingField {
+                            packet_type: self.packet_type,
+                            field,
+                        });
+                    }
+                }
+            }
+            PacketType::VoiceStop => {
+                require_payload_str(&self.payload, self.packet_type, "session_id")?;
+                require_payload_str(&self.payload, self.packet_type, "reason")?;
+            }
+            PacketType::VoiceFrame => {
+                require_payload_str(&self.payload, self.packet_type, "session_id")?;
+                require_payload_str(&self.payload, self.packet_type, "timestamp")?;
+                if !payload_has_number(&self.payload, "sequence") {
+                    return Err(ProtocolError::MissingField {
+                        packet_type: self.packet_type,
+                        field: "sequence",
+                    });
+                }
+                require_payload_array(&self.payload, self.packet_type, "opus_payload")?;
+                if !payload_has_bool(&self.payload, "encrypted") {
+                    return Err(ProtocolError::MissingField {
+                        packet_type: self.packet_type,
+                        field: "encrypted",
+                    });
+                }
+            }
+            PacketType::VoiceHeartbeat => {
+                require_payload_str(&self.payload, self.packet_type, "session_id")?;
+                require_payload_number(&self.payload, self.packet_type, "packets_lost")?;
+                for field in ["muted", "push_to_talk", "speaking"] {
+                    if !payload_has_bool(&self.payload, field) {
                         return Err(ProtocolError::MissingField {
                             packet_type: self.packet_type,
                             field,
@@ -1410,6 +1577,22 @@ fn require_payload_str(
 
 fn payload_has_number(payload: &Value, field: &'static str) -> bool {
     payload.get(field).and_then(Value::as_u64).is_some()
+}
+
+fn require_payload_number(
+    payload: &Value,
+    packet_type: PacketType,
+    field: &'static str,
+) -> ProtocolResult<()> {
+    if payload_has_number(payload, field) {
+        Ok(())
+    } else {
+        Err(ProtocolError::MissingField { packet_type, field })
+    }
+}
+
+fn payload_has_bool(payload: &Value, field: &'static str) -> bool {
+    payload.get(field).and_then(Value::as_bool).is_some()
 }
 
 fn require_payload_array(
@@ -1662,6 +1845,68 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn voice_packets_validate() {
+        Packet::voice_start(
+            "KY-71AF92",
+            "Helio",
+            "semana-info",
+            VoiceStartPayload {
+                session_id: "voice-1".into(),
+                codec: "opus".into(),
+                bitrate: 24_000,
+                frame_ms: 20,
+                muted: false,
+                push_to_talk: false,
+                encrypted: true,
+            },
+        )
+        .validate()
+        .unwrap();
+
+        Packet::voice_frame(
+            "KY-71AF92",
+            "Helio",
+            "semana-info",
+            VoiceFramePayload {
+                session_id: "voice-1".into(),
+                sequence: 7,
+                timestamp: "123".into(),
+                opus_payload: vec![1, 2, 3, 4],
+                encrypted: true,
+            },
+        )
+        .validate()
+        .unwrap();
+
+        Packet::voice_heartbeat(
+            "KY-71AF92",
+            "Helio",
+            "semana-info",
+            VoiceHeartbeatPayload {
+                session_id: "voice-1".into(),
+                muted: false,
+                push_to_talk: true,
+                speaking: true,
+                packets_lost: 0,
+            },
+        )
+        .validate()
+        .unwrap();
+
+        Packet::voice_stop(
+            "KY-71AF92",
+            "Helio",
+            "semana-info",
+            VoiceStopPayload {
+                session_id: "voice-1".into(),
+                reason: "left-room".into(),
+            },
+        )
+        .validate()
+        .unwrap();
     }
 
     #[test]

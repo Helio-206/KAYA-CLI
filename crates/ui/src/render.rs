@@ -94,6 +94,9 @@ fn draw_header(frame: &mut Frame, area: Rect, state: &UiState) {
             Span::styled("ROOM ", label_style()),
             Span::styled(format!("#{}", state.current_room), cyan_style()),
             Span::raw("   "),
+            Span::styled("VOICE ", label_style()),
+            Span::styled(voice_summary(state), voice_status_style(state)),
+            Span::raw("   "),
             Span::styled("FINGERPRINT ", label_style()),
             Span::styled(&state.identity_fingerprint, security_style),
         ]),
@@ -546,6 +549,7 @@ fn draw_network(frame: &mut Frame, area: Rect, state: &UiState) {
         Line::from(connection_line(state)),
         Line::from(mesh_line(state)),
         Line::from(security_line(state)),
+        Line::from(voice_line(state)),
         Line::from(input_echo_line(state)),
     ];
 
@@ -768,6 +772,58 @@ fn connection_line(state: &UiState) -> Vec<Span<'_>> {
         ));
     }
     spans
+}
+
+fn voice_line(state: &UiState) -> Vec<Span<'_>> {
+    let mut spans = vec![
+        Span::styled("voice: ", label_style()),
+        Span::styled(voice_summary(state), voice_status_style(state)),
+    ];
+
+    if !state.voice.active_speakers.is_empty() {
+        spans.push(Span::raw("    "));
+        spans.push(Span::styled("speakers: ", label_style()));
+        spans.push(Span::styled(
+            state.voice.active_speakers.join(", "),
+            accent_style(),
+        ));
+    }
+
+    spans.push(Span::raw("    "));
+    spans.push(Span::styled("frames: ", label_style()));
+    spans.push(Span::styled(
+        format!("{} tx / {} rx", state.voice.frames_tx, state.voice.frames_rx),
+        value_style(),
+    ));
+    spans.push(Span::raw("    "));
+    spans.push(Span::styled("loss: ", label_style()));
+    spans.push(Span::styled(
+        state.voice.packets_lost.to_string(),
+        warning_style(),
+    ));
+    spans
+}
+
+fn voice_summary(state: &UiState) -> String {
+    match &state.voice.room {
+        Some(room) => format!(
+            "#{} {} {}",
+            room,
+            if state.voice.muted { "muted" } else { "live" },
+            if state.voice.push_to_talk { "ptt" } else { "open" }
+        ),
+        None if state.voice.enabled => "ready".into(),
+        None => "disabled".into(),
+    }
+}
+
+fn voice_status_style(state: &UiState) -> ratatui::style::Style {
+    match &state.voice.room {
+        Some(_) if state.voice.muted => warning_style(),
+        Some(_) => success_style(),
+        None if state.voice.enabled => muted_style(),
+        None => danger_style(),
+    }
 }
 
 fn peer_style(peer: &UiPeer) -> ratatui::style::Style {

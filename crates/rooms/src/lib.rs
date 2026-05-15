@@ -271,6 +271,10 @@ impl RoomStore {
             | PacketType::RoutePing
             | PacketType::RoutePong
             | PacketType::PresenceUpdate
+            | PacketType::VoiceStart
+            | PacketType::VoiceStop
+            | PacketType::VoiceFrame
+            | PacketType::VoiceHeartbeat
             | PacketType::Ping
             | PacketType::Pong
             | PacketType::System

@@ -98,6 +98,19 @@ pub struct UiDiagnostics {
     pub memory_kb: Option<u64>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UiVoiceState {
+    pub enabled: bool,
+    pub room: Option<String>,
+    pub session_id: Option<String>,
+    pub muted: bool,
+    pub push_to_talk: bool,
+    pub active_speakers: Vec<String>,
+    pub frames_rx: u64,
+    pub frames_tx: u64,
+    pub packets_lost: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct UiState {
     pub space: String,
@@ -120,6 +133,7 @@ pub struct UiState {
     pub trusted_peers: usize,
     pub blocked_peers: usize,
     pub secure_sessions: usize,
+    pub voice: UiVoiceState,
     pub security_warnings: u64,
     pub logs: Vec<String>,
     pub show_logs: bool,
@@ -163,6 +177,7 @@ impl UiState {
             trusted_peers: 0,
             blocked_peers: 0,
             secure_sessions: 0,
+            voice: UiVoiceState::default(),
             security_warnings: 0,
             logs: Vec::new(),
             show_logs: true,

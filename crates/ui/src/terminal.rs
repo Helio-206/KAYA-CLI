@@ -14,6 +14,12 @@ pub struct TerminalUi {
     terminal: Terminal<CrosstermBackend<Stdout>>,
 }
 
+pub enum TerminalAction {
+    Submit(String),
+    VoicePttStart,
+    VoicePttStop,
+}
+
 impl TerminalUi {
     pub fn enter() -> io::Result<Self> {
         enable_raw_mode()?;
@@ -34,7 +40,7 @@ impl TerminalUi {
         &mut self,
         state: &mut UiState,
         timeout: Duration,
-    ) -> io::Result<Option<String>> {
+    ) -> io::Result<Option<TerminalAction>> {
         if !event::poll(timeout)? {
             return Ok(None);
         }
@@ -51,7 +57,19 @@ impl TerminalUi {
     }
 }
 
-fn handle_key_event(state: &mut UiState, key: KeyEvent) -> io::Result<Option<String>> {
+fn handle_key_event(state: &mut UiState, key: KeyEvent) -> io::Result<Option<TerminalAction>> {
+    if matches!(key.code, KeyCode::Char(' '))
+        && key.modifiers.is_empty()
+        && state.input.is_empty()
+        && state.voice.room.is_some()
+    {
+        state.dismiss_overlays();
+        return Ok(match key.kind {
+            KeyEventKind::Press | KeyEventKind::Repeat => Some(TerminalAction::VoicePttStart),
+            KeyEventKind::Release => Some(TerminalAction::VoicePttStop),
+        });
+    }
+
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
         return Ok(None);
     }
@@ -65,16 +83,16 @@ fn handle_key_event(state: &mut UiState, key: KeyEvent) -> io::Result<Option<Str
             if submitted.is_empty() {
                 Ok(None)
             } else {
-                Ok(Some(submitted))
+                Ok(Some(TerminalAction::Submit(submitted)))
             }
         }
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             state.dismiss_overlays();
-            Ok(Some("/exit".into()))
+            Ok(Some(TerminalAction::Submit("/exit".into())))
         }
         KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             state.dismiss_overlays();
-            Ok(Some("/clear".into()))
+            Ok(Some(TerminalAction::Submit("/clear".into())))
         }
         KeyCode::Char(ch) => {
             state.dismiss_overlays();
@@ -108,7 +126,7 @@ fn handle_key_event(state: &mut UiState, key: KeyEvent) -> io::Result<Option<Str
         }
         KeyCode::Esc => {
             state.dismiss_overlays();
-            Ok(Some("/exit".into()))
+            Ok(Some(TerminalAction::Submit("/exit".into())))
         }
         _ => Ok(None),
     }
@@ -154,5 +172,21 @@ mod tests {
         handle_key_event(&mut state, key(KeyCode::Char('a'), KeyEventKind::Repeat)).unwrap();
 
         assert_eq!(state.input, "aa");
+    }
+
+    #[test]
+    fn space_becomes_ptt_when_voice_is_active() {
+        let mut state = UiState::new("KY-71AF92", "Helio", "geral");
+        state.voice.room = Some("geral".into());
+
+        let pressed = handle_key_event(&mut state, key(KeyCode::Char(' '), KeyEventKind::Press))
+            .unwrap();
+        let released =
+            handle_key_event(&mut state, key(KeyCode::Char(' '), KeyEventKind::Release))
+                .unwrap();
+
+        assert!(matches!(pressed, Some(TerminalAction::VoicePttStart)));
+        assert!(matches!(released, Some(TerminalAction::VoicePttStop)));
+        assert!(state.input.is_empty());
     }
 }

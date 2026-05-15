@@ -267,6 +267,10 @@ pub fn packet_requires_signature_validation(packet_type: PacketType) -> bool {
             | PacketType::Heartbeat
             | PacketType::RoomJoin
             | PacketType::RoomLeave
+            | PacketType::VoiceStart
+            | PacketType::VoiceStop
+            | PacketType::VoiceFrame
+            | PacketType::VoiceHeartbeat
             | PacketType::PresenceUpdate
             | PacketType::DirectMessage
             | PacketType::DmSessionRequest

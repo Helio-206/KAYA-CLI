@@ -7,6 +7,7 @@ authors.workspace = true
 
 [dependencies]
 kaya-shared = { path = "../shared" }
+kaya-voice = { path = "../voice" }
 serde.workspace = true
 serde_json.workspace = true
 sled.workspace = true
