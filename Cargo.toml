@@ -6,6 +6,7 @@ members = [
     "crates/direct",
     "crates/events",
     "crates/files",
+    "crates/ffi",
     "crates/mesh",
     "crates/peer",
     "crates/persistence",
